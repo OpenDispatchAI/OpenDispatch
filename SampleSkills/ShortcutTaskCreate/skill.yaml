@@ -1,0 +1,21 @@
+skill_id: shortcut_task_create
+name: Shortcuts Task Bridge
+version: 1.0.0
+bridge_shortcut: "OpenDispatch Add Task"
+
+actions:
+  - id: task.create
+    title: "Create Task"
+    description: "Create a task via the OpenDispatch Add Task shortcut"
+    confirmation: required
+    shortcut_arguments:
+      title: "{{title}}"
+    parameters:
+      - name: title
+        type: string
+        description: "The task title"
+        required: true
+    examples:
+      - run the shortcut task flow
+      - send this to my shortcut
+      - add task via shortcut
