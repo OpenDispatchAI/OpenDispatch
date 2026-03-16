@@ -2,7 +2,7 @@ skill_id: tesla
 name: Tesla
 version: 1.0.0
 bridge_shortcut: "OpenDispatch - Tesla V1"
-bridge_shortcut_share_url: https://www.icloud.com/shortcuts/REPLACE_ME
+bridge_shortcut_share_url: https://www.icloud.com/shortcuts/f21f0121c47b4910a27e76193ee27254
 
 actions:
   - id: vehicle.unlock
