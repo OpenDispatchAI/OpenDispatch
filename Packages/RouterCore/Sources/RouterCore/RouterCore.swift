@@ -1,0 +1,1019 @@
+import CapabilityRegistry
+import Foundation
+
+public enum JSONValue: Hashable, Codable, Sendable {
+    case string(String)
+    case number(Double)
+    case integer(Int)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value.")
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value):
+            try container.encode(value)
+        case let .number(value):
+            try container.encode(value)
+        case let .integer(value):
+            try container.encode(value)
+        case let .bool(value):
+            try container.encode(value)
+        case let .object(value):
+            try container.encode(value)
+        case let .array(value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    public var stringValue: String? {
+        switch self {
+        case let .string(value):
+            value
+        case let .integer(value):
+            String(value)
+        case let .number(value):
+            String(value)
+        case let .bool(value):
+            String(value)
+        default:
+            nil
+        }
+    }
+}
+
+public enum RouterRequestSource: String, Codable, Hashable, Sendable {
+    case text
+    case speech
+    case actionButton
+    case appIntent
+}
+
+public struct RouterRequest: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public let rawInput: String
+    public let source: RouterRequestSource
+    public let timestamp: Date
+
+    public init(
+        id: UUID = UUID(),
+        rawInput: String,
+        source: RouterRequestSource = .text,
+        timestamp: Date = Date()
+    ) {
+        self.id = id
+        self.rawInput = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.source = source
+        self.timestamp = timestamp
+    }
+}
+
+public struct PlannerSkillContext: Hashable, Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let capability: CapabilityID
+    public let providerID: String
+    public let keywords: [String]
+    public let examples: [String]
+    public let documentation: String
+
+    public init(
+        id: String,
+        name: String,
+        capability: CapabilityID,
+        providerID: String,
+        keywords: [String] = [],
+        examples: [String] = [],
+        documentation: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.capability = capability
+        self.providerID = providerID
+        self.keywords = keywords
+        self.examples = examples
+        self.documentation = documentation
+    }
+}
+
+public struct RoutingHints: Hashable, Codable, Sendable {
+    public let domain: String?
+    public let listHint: String?
+    public let audience: String?
+
+    public init(
+        domain: String? = nil,
+        listHint: String? = nil,
+        audience: String? = nil
+    ) {
+        self.domain = RoutingHints.normalized(domain)
+        self.listHint = RoutingHints.normalized(listHint)
+        self.audience = RoutingHints.normalized(audience)
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.isEmpty == false else {
+            return nil
+        }
+        return trimmed.lowercased()
+    }
+}
+
+// MARK: - MatchCandidate
+
+public struct MatchCandidate: Hashable, Codable, Sendable {
+    public let skillID: String
+    public let skillName: String
+    public let actionID: String
+    public let actionTitle: String
+    public let capability: CapabilityID
+    public let distance: Double
+    public let confidence: Double
+
+    public init(
+        skillID: String,
+        skillName: String,
+        actionID: String,
+        actionTitle: String,
+        capability: CapabilityID,
+        distance: Double,
+        confidence: Double
+    ) {
+        self.skillID = skillID
+        self.skillName = skillName
+        self.actionID = actionID
+        self.actionTitle = actionTitle
+        self.capability = capability
+        self.distance = distance
+        self.confidence = confidence
+    }
+}
+
+// MARK: - ParameterSchema
+
+public struct ParameterSchema: Hashable, Codable, Sendable {
+    public let name: String
+    public let type: String
+    public let description: String?
+    public let required: Bool
+
+    public init(
+        name: String,
+        type: String,
+        description: String? = nil,
+        required: Bool = true
+    ) {
+        self.name = name
+        self.type = type
+        self.description = description
+        self.required = required
+    }
+}
+
+// MARK: - CompiledEntry
+
+public struct CompiledEntry: Hashable, Codable, Sendable {
+    public let embedding: [Float]
+    public let skillID: String
+    public let skillName: String
+    public let actionID: String
+    public let actionTitle: String
+    public let capability: CapabilityID
+    public let parameters: [ParameterSchema]?
+    public let shortcutArguments: [String: JSONValue]?
+    public let originalExample: String
+    public let language: String
+
+    public var requiresParameterExtraction: Bool {
+        guard let parameters else { return false }
+        return !parameters.isEmpty
+    }
+
+    public init(
+        embedding: [Float],
+        skillID: String,
+        skillName: String,
+        actionID: String,
+        actionTitle: String,
+        capability: CapabilityID,
+        parameters: [ParameterSchema]?,
+        shortcutArguments: [String: JSONValue]?,
+        originalExample: String,
+        language: String
+    ) {
+        self.embedding = embedding
+        self.skillID = skillID
+        self.skillName = skillName
+        self.actionID = actionID
+        self.actionTitle = actionTitle
+        self.capability = capability
+        self.parameters = parameters
+        self.shortcutArguments = shortcutArguments
+        self.originalExample = originalExample
+        self.language = language
+    }
+}
+
+// MARK: - CompiledIndex
+
+public struct CompiledIndex: Hashable, Codable, Sendable {
+    /// Bump this when the index format changes. Cached indexes with a
+    /// different version are discarded and recompiled automatically.
+    public static let schemaVersion = 1
+
+    public let schemaVersion: Int
+    public let entries: [CompiledEntry]
+    public let compiledAt: Date
+
+    public init(entries: [CompiledEntry], compiledAt: Date = Date()) {
+        self.schemaVersion = Self.schemaVersion
+        self.entries = entries
+        self.compiledAt = compiledAt
+    }
+
+    public func nearestNeighbors(to query: [Float], count: Int) -> [MatchCandidate] {
+        let scored = entries.map { entry -> (entry: CompiledEntry, distance: Double) in
+            let dist = cosineDistance(query, entry.embedding)
+            return (entry, dist)
+        }
+        let sorted = scored.sorted { $0.distance < $1.distance }
+
+        // Deduplicate: keep only the closest match per skill+action pair
+        var seen = Set<String>()
+        var candidates: [MatchCandidate] = []
+        for item in sorted {
+            let key = "\(item.entry.skillID)/\(item.entry.actionID)"
+            guard seen.insert(key).inserted else { continue }
+            let confidence = max(0.0, 1.0 - item.distance)
+            candidates.append(MatchCandidate(
+                skillID: item.entry.skillID,
+                skillName: item.entry.skillName,
+                actionID: item.entry.actionID,
+                actionTitle: item.entry.actionTitle,
+                capability: item.entry.capability,
+                distance: item.distance,
+                confidence: confidence
+            ))
+            if candidates.count >= count { break }
+        }
+        return candidates
+    }
+
+    public func entry(for candidate: MatchCandidate) -> CompiledEntry? {
+        entries.first { $0.skillID == candidate.skillID && $0.actionID == candidate.actionID }
+    }
+
+    private func cosineDistance(_ a: [Float], _ b: [Float]) -> Double {
+        let length = min(a.count, b.count)
+        guard length > 0 else { return 1.0 }
+
+        var dot: Float = 0
+        var normA: Float = 0
+        var normB: Float = 0
+
+        for i in 0..<length {
+            dot += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+
+        let denominator = sqrt(normA) * sqrt(normB)
+        guard denominator > 0 else { return 1.0 }
+
+        let similarity = Double(dot / denominator)
+        return 1.0 - similarity
+    }
+}
+
+// MARK: - RouterPlan
+
+public struct RouterPlan: Hashable, Codable, Sendable {
+    public let capability: CapabilityID
+    public let parameters: [String: JSONValue]
+    public let confidence: Double
+    public let title: String?
+    public let routing: RoutingHints?
+    public let suggestedProviderID: String?
+    public let matchCandidates: [MatchCandidate]?
+
+    public init(
+        capability: CapabilityID,
+        parameters: [String: JSONValue],
+        confidence: Double,
+        title: String? = nil,
+        routing: RoutingHints? = nil,
+        suggestedProviderID: String? = nil,
+        matchCandidates: [MatchCandidate]? = nil
+    ) {
+        self.capability = capability
+        self.parameters = parameters
+        self.confidence = confidence
+        self.title = title
+        self.routing = routing
+        self.suggestedProviderID = suggestedProviderID
+        self.matchCandidates = matchCandidates
+    }
+
+    public init(
+        capability: CapabilityID,
+        parameters: [String: JSONValue],
+        confidence: Double,
+        suggestedProviderID: String?
+    ) {
+        self.init(
+            capability: capability,
+            parameters: parameters,
+            confidence: confidence,
+            title: nil,
+            routing: nil,
+            suggestedProviderID: suggestedProviderID,
+            matchCandidates: nil
+        )
+    }
+}
+
+public struct ToolCall: Hashable, Codable, Sendable {
+    public let executorID: String
+    public let payload: [String: JSONValue]
+
+    public init(executorID: String, payload: [String: JSONValue]) {
+        self.executorID = executorID
+        self.payload = payload
+    }
+}
+
+public enum ExecutionMode: String, Codable, Hashable, Sendable {
+    case dryRun
+    case live
+}
+
+public struct ExecutionResult: Hashable, Codable, Sendable {
+    public let success: Bool
+    public let failureReason: String?
+    public let metadata: [String: JSONValue]
+    public let toolCall: ToolCall?
+
+    public init(
+        success: Bool,
+        failureReason: String? = nil,
+        metadata: [String: JSONValue] = [:],
+        toolCall: ToolCall? = nil
+    ) {
+        self.success = success
+        self.failureReason = failureReason
+        self.metadata = metadata
+        self.toolCall = toolCall
+    }
+
+    public static func success(
+        metadata: [String: JSONValue] = [:],
+        toolCall: ToolCall? = nil
+    ) -> ExecutionResult {
+        ExecutionResult(success: true, metadata: metadata, toolCall: toolCall)
+    }
+
+    public static func failure(
+        _ reason: String,
+        metadata: [String: JSONValue] = [:],
+        toolCall: ToolCall? = nil
+    ) -> ExecutionResult {
+        ExecutionResult(success: false, failureReason: reason, metadata: metadata, toolCall: toolCall)
+    }
+}
+
+public struct DispatchEvent: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public let timestamp: Date
+    public let rawInput: String
+    public let routerPlan: RouterPlan
+    public let providerID: String
+    public let parameters: [String: JSONValue]
+    public let result: ExecutionResult
+
+    public init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        rawInput: String,
+        routerPlan: RouterPlan,
+        providerID: String,
+        parameters: [String: JSONValue],
+        result: ExecutionResult
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.rawInput = rawInput
+        self.routerPlan = routerPlan
+        self.providerID = providerID
+        self.parameters = parameters
+        self.result = result
+    }
+}
+
+public struct RoutingPolicy: Hashable, Codable, Sendable {
+    public var localConfidenceThreshold: Double
+    public var allowRemoteEscalation: Bool
+    public var dryRun: Bool
+    public var confirmationGranted: Bool
+    public var requireConfirmationForExternal: Bool
+    public var preferredProviders: [String: [String]]
+
+    public init(
+        localConfidenceThreshold: Double = 0.74,
+        allowRemoteEscalation: Bool = false,
+        dryRun: Bool = false,
+        confirmationGranted: Bool = false,
+        requireConfirmationForExternal: Bool = true,
+        preferredProviders: [String: [String]] = [:]
+    ) {
+        self.localConfidenceThreshold = localConfidenceThreshold
+        self.allowRemoteEscalation = allowRemoteEscalation
+        self.dryRun = dryRun
+        self.confirmationGranted = confirmationGranted
+        self.requireConfirmationForExternal = requireConfirmationForExternal
+        self.preferredProviders = preferredProviders
+    }
+
+    public func preferredProviderOrder(
+        for capability: CapabilityID,
+        routing: RoutingHints?
+    ) -> [String] {
+        var merged: [String] = []
+        for key in preferenceKeys(for: capability, routing: routing) {
+            for providerID in preferredProviders[key] ?? [] where merged.contains(providerID) == false {
+                merged.append(providerID)
+            }
+        }
+        return merged
+    }
+
+    public func preferenceKeys(
+        for capability: CapabilityID,
+        routing: RoutingHints?
+    ) -> [String] {
+        var keys: [String] = []
+        if let domain = routing?.domain {
+            keys.append("\(capability.rawValue).\(domain)")
+        }
+        keys.append(capability.rawValue)
+        return keys
+    }
+}
+
+public enum ConfirmationBehavior: Hashable, Codable, Sendable {
+    case never
+    case always
+    case destructiveOnly
+}
+
+public protocol DispatchProvider: Sendable {
+    var descriptor: ProviderDescriptor { get }
+    var confirmationBehavior: ConfirmationBehavior { get }
+
+    func validate(plan: RouterPlan) throws
+    func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult
+}
+
+public protocol DispatchEventStoring: Sendable {
+    func store(_ event: DispatchEvent) async throws
+}
+
+public protocol RouterPlanningBackend: Sendable {
+    var id: String { get }
+    func plan(
+        request: RouterRequest,
+        availableSkills: [PlannerSkillContext]
+    ) async throws -> RouterPlan
+}
+
+public enum RouterError: Error, Equatable, Sendable, LocalizedError {
+    case invalidConfidence(Double)
+    case emptyInput
+    case unsupportedCapability(CapabilityID)
+    case noProviderFound(CapabilityID)
+    case suggestedProviderUnavailable(String)
+    case providerValidationFailed(String)
+    case ambiguousProviders([DestinationOption], RouterPlan)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .invalidConfidence(value):
+            "Invalid confidence value: \(value) (must be 0-1)"
+        case .emptyInput:
+            "Empty input"
+        case let .unsupportedCapability(id):
+            "Unsupported capability: \(id.rawValue)"
+        case let .noProviderFound(id):
+            "No provider found for capability: \(id.rawValue)"
+        case let .suggestedProviderUnavailable(id):
+            "Suggested provider unavailable: \(id)"
+        case let .providerValidationFailed(reason):
+            "Provider validation failed: \(reason)"
+        case let .ambiguousProviders(options, plan):
+            "Ambiguous providers for \(plan.capability.rawValue): \(options.map(\.providerDisplayName).joined(separator: ", "))"
+        }
+    }
+}
+
+public struct DestinationOption: Identifiable, Hashable, Codable, Sendable {
+    public let providerID: String
+    public let providerDisplayName: String
+    public let reason: String?
+
+    public var id: String {
+        providerID
+    }
+
+    public init(
+        providerID: String,
+        providerDisplayName: String,
+        reason: String? = nil
+    ) {
+        self.providerID = providerID
+        self.providerDisplayName = providerDisplayName
+        self.reason = reason
+    }
+}
+
+public enum DestinationResolution: Hashable, Codable, Sendable {
+    case resolved(providerID: String)
+    case ambiguous([DestinationOption])
+}
+
+public struct DestinationResolver: Sendable {
+    public init() {}
+
+    public func resolve(
+        plan: RouterPlan,
+        descriptors: [ProviderDescriptor],
+        policy: RoutingPolicy
+    ) -> DestinationResolution {
+        guard descriptors.isEmpty == false else {
+            return .ambiguous([])
+        }
+
+        let preferredOrder = policy.preferredProviderOrder(for: plan.capability, routing: plan.routing)
+        let heuristicOrder = heuristicProviderOrder(for: plan, descriptors: descriptors)
+        let sortedDescriptors = descriptors.sorted {
+            compare(
+                lhs: $0,
+                rhs: $1,
+                preferredOrder: preferredOrder,
+                heuristicOrder: heuristicOrder,
+                suggestedProviderID: plan.suggestedProviderID
+            )
+        }
+
+        if shouldPromptForAmbiguity(
+            plan: plan,
+            sortedDescriptors: sortedDescriptors,
+            preferredOrder: preferredOrder,
+            heuristicOrder: heuristicOrder
+        ) {
+            return .ambiguous(sortedDescriptors.map { descriptor in
+                DestinationOption(
+                    providerID: descriptor.id,
+                    providerDisplayName: descriptor.displayName,
+                    reason: reason(
+                        for: descriptor,
+                        preferredOrder: preferredOrder,
+                        heuristicOrder: heuristicOrder,
+                        suggestedProviderID: plan.suggestedProviderID
+                    )
+                )
+            })
+        }
+
+        guard let first = sortedDescriptors.first else {
+            return .ambiguous([])
+        }
+        return .resolved(providerID: first.id)
+    }
+
+    private func shouldPromptForAmbiguity(
+        plan: RouterPlan,
+        sortedDescriptors: [ProviderDescriptor],
+        preferredOrder: [String],
+        heuristicOrder: [String]
+    ) -> Bool {
+        guard sortedDescriptors.count > 1 else {
+            return false
+        }
+        guard plan.suggestedProviderID == nil else {
+            return false
+        }
+        guard preferredOrder.isEmpty else {
+            return false
+        }
+        guard heuristicOrder.isEmpty else {
+            return false
+        }
+        guard plan.routing?.domain != nil else {
+            return false
+        }
+        return true
+    }
+
+    private func compare(
+        lhs: ProviderDescriptor,
+        rhs: ProviderDescriptor,
+        preferredOrder: [String],
+        heuristicOrder: [String],
+        suggestedProviderID: String?
+    ) -> Bool {
+        if lhs.id == suggestedProviderID {
+            return true
+        }
+        if rhs.id == suggestedProviderID {
+            return false
+        }
+
+        let leftIndex = preferredOrder.firstIndex(of: lhs.id) ?? Int.max
+        let rightIndex = preferredOrder.firstIndex(of: rhs.id) ?? Int.max
+        if leftIndex != rightIndex {
+            return leftIndex < rightIndex
+        }
+
+        let leftHeuristicIndex = heuristicOrder.firstIndex(of: lhs.id) ?? Int.max
+        let rightHeuristicIndex = heuristicOrder.firstIndex(of: rhs.id) ?? Int.max
+        if leftHeuristicIndex != rightHeuristicIndex {
+            return leftHeuristicIndex < rightHeuristicIndex
+        }
+        if lhs.priority != rhs.priority {
+            return lhs.priority > rhs.priority
+        }
+        return lhs.displayName < rhs.displayName
+    }
+
+    private func reason(
+        for descriptor: ProviderDescriptor,
+        preferredOrder: [String],
+        heuristicOrder: [String],
+        suggestedProviderID: String?
+    ) -> String? {
+        if descriptor.id == suggestedProviderID {
+            return "Suggested by planner"
+        }
+        if preferredOrder.first == descriptor.id {
+            return "Matched saved preference"
+        }
+        if heuristicOrder.first == descriptor.id {
+            return "Matched routing heuristic"
+        }
+        return nil
+    }
+
+    private func heuristicProviderOrder(
+        for plan: RouterPlan,
+        descriptors: [ProviderDescriptor]
+    ) -> [String] {
+        guard let domain = plan.routing?.domain else {
+            return []
+        }
+
+        let preferredNeedles: [String]
+        switch domain {
+        case "grocery", "groceries":
+            preferredNeedles = ["ticktick", "grocer", "shopping"]
+        case "personal":
+            preferredNeedles = ["apple_reminders", "reminders"]
+        case "work":
+            preferredNeedles = ["apple_reminders", "reminders", "notion"]
+        default:
+            preferredNeedles = []
+        }
+
+        guard preferredNeedles.isEmpty == false else {
+            return []
+        }
+
+        let ranked = descriptors
+            .map { descriptor in
+                let haystack = "\(descriptor.id) \(descriptor.displayName)".lowercased()
+                let score = preferredNeedles.enumerated().reduce(into: 0) { partialResult, entry in
+                    if haystack.contains(entry.element) {
+                        partialResult += max(1, preferredNeedles.count - entry.offset)
+                    }
+                }
+                return (descriptor, score)
+            }
+            .filter { $0.1 > 0 }
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 {
+                    return lhs.1 > rhs.1
+                }
+                if lhs.0.priority != rhs.0.priority {
+                    return lhs.0.priority > rhs.0.priority
+                }
+                return lhs.0.displayName < rhs.0.displayName
+            }
+
+        return ranked.map(\.0.id)
+    }
+}
+
+public struct RouteResolution: Hashable, Codable, Sendable {
+    public let request: RouterRequest
+    public let plan: RouterPlan
+    public let providerID: String
+    public let providerDisplayName: String
+    public let usedEscalation: Bool
+    public let confirmationRequired: Bool
+    public let executionMode: ExecutionMode
+    public let result: ExecutionResult
+
+    public init(
+        request: RouterRequest,
+        plan: RouterPlan,
+        providerID: String,
+        providerDisplayName: String,
+        usedEscalation: Bool,
+        confirmationRequired: Bool,
+        executionMode: ExecutionMode,
+        result: ExecutionResult
+    ) {
+        self.request = request
+        self.plan = plan
+        self.providerID = providerID
+        self.providerDisplayName = providerDisplayName
+        self.usedEscalation = usedEscalation
+        self.confirmationRequired = confirmationRequired
+        self.executionMode = executionMode
+        self.result = result
+    }
+}
+
+public actor InMemoryDispatchEventStore: DispatchEventStoring {
+    private(set) var events: [DispatchEvent] = []
+
+    public init() {}
+
+    public func store(_ event: DispatchEvent) async throws {
+        events.append(event)
+    }
+}
+
+public actor Router {
+    private let capabilityRegistry: CapabilityRegistry
+    private let primaryBackend: any RouterPlanningBackend
+    private let escalationBackend: (any RouterPlanningBackend)?
+    private let eventStore: any DispatchEventStoring
+    private let providersByID: [String: any DispatchProvider]
+    private let destinationResolver: DestinationResolver
+
+    public init(
+        capabilityRegistry: CapabilityRegistry,
+        primaryBackend: any RouterPlanningBackend,
+        escalationBackend: (any RouterPlanningBackend)? = nil,
+        providers: [any DispatchProvider],
+        eventStore: any DispatchEventStoring,
+        destinationResolver: DestinationResolver = DestinationResolver()
+    ) {
+        self.capabilityRegistry = capabilityRegistry
+        self.primaryBackend = primaryBackend
+        self.escalationBackend = escalationBackend
+        self.eventStore = eventStore
+        self.destinationResolver = destinationResolver
+        var index: [String: any DispatchProvider] = [:]
+        for provider in providers {
+            index[provider.descriptor.id] = provider
+        }
+        providersByID = index
+    }
+
+    public func route(
+        request: RouterRequest,
+        availableSkills: [PlannerSkillContext] = [],
+        policy: RoutingPolicy = RoutingPolicy()
+    ) async throws -> RouteResolution {
+        guard request.rawInput.isEmpty == false else {
+            throw RouterError.emptyInput
+        }
+
+        let primaryPlan = try await primaryBackend.plan(request: request, availableSkills: availableSkills)
+        let resolved = try await resolve(
+            request: request,
+            initialPlan: primaryPlan,
+            availableSkills: availableSkills,
+            policy: policy
+        )
+        try await persist(resolution: resolved)
+        return resolved
+    }
+
+    public func executeResolvedPlan(
+        request: RouterRequest,
+        plan: RouterPlan,
+        providerID: String,
+        policy: RoutingPolicy = RoutingPolicy(confirmationGranted: true)
+    ) async throws -> RouteResolution {
+        let validatedPlan = try validate(plan)
+        guard let provider = providersByID[providerID] else {
+            throw RouterError.suggestedProviderUnavailable(providerID)
+        }
+        let resolution = await execute(
+            request: request,
+            plan: validatedPlan,
+            provider: provider,
+            usedEscalation: false,
+            policy: policy
+        )
+        try await persist(resolution: resolution)
+        return resolution
+    }
+
+    private func resolve(
+        request: RouterRequest,
+        initialPlan: RouterPlan,
+        availableSkills: [PlannerSkillContext],
+        policy: RoutingPolicy
+    ) async throws -> RouteResolution {
+        var plan = try validate(initialPlan)
+        var usedEscalation = false
+
+        if plan.confidence < policy.localConfidenceThreshold,
+           policy.allowRemoteEscalation,
+           let escalationBackend {
+            let escalatedPlan = try await escalationBackend.plan(request: request, availableSkills: availableSkills)
+            let validatedEscalation = try validate(escalatedPlan)
+            if validatedEscalation.confidence > plan.confidence {
+                // Preserve the primary plan's match candidates for debug visibility
+                let primaryCandidates = plan.matchCandidates
+                plan = RouterPlan(
+                    capability: validatedEscalation.capability,
+                    parameters: validatedEscalation.parameters,
+                    confidence: validatedEscalation.confidence,
+                    title: validatedEscalation.title,
+                    routing: validatedEscalation.routing,
+                    suggestedProviderID: validatedEscalation.suggestedProviderID,
+                    matchCandidates: validatedEscalation.matchCandidates ?? primaryCandidates
+                )
+                usedEscalation = true
+            }
+        }
+
+        let provider = try selectProvider(for: plan, policy: policy)
+        return await execute(
+            request: request,
+            plan: plan,
+            provider: provider,
+            usedEscalation: usedEscalation,
+            policy: policy
+        )
+    }
+
+    private func validate(_ plan: RouterPlan) throws -> RouterPlan {
+        guard (0 ... 1).contains(plan.confidence) else {
+            throw RouterError.invalidConfidence(plan.confidence)
+        }
+        guard capabilityRegistry.contains(plan.capability) else {
+            throw RouterError.unsupportedCapability(plan.capability)
+        }
+        return plan
+    }
+
+    private func selectProvider(
+        for plan: RouterPlan,
+        policy: RoutingPolicy
+    ) throws -> any DispatchProvider {
+        let descriptors = capabilityRegistry.providers(for: plan.capability)
+        guard descriptors.isEmpty == false else {
+            throw RouterError.noProviderFound(plan.capability)
+        }
+
+        let validDescriptors = descriptors.compactMap { descriptor -> ProviderDescriptor? in
+            guard let provider = providersByID[descriptor.id] else {
+                return nil
+            }
+            do {
+                try provider.validate(plan: plan)
+                return descriptor
+            } catch {
+                return nil
+            }
+        }
+
+        guard validDescriptors.isEmpty == false else {
+            throw RouterError.providerValidationFailed(plan.capability.rawValue)
+        }
+
+        switch destinationResolver.resolve(plan: plan, descriptors: validDescriptors, policy: policy) {
+        case let .resolved(providerID):
+            guard let provider = providersByID[providerID] else {
+                throw RouterError.suggestedProviderUnavailable(providerID)
+            }
+            return provider
+        case let .ambiguous(options):
+            throw RouterError.ambiguousProviders(options, plan)
+        }
+    }
+
+    private func execute(
+        request: RouterRequest,
+        plan: RouterPlan,
+        provider: any DispatchProvider,
+        usedEscalation: Bool,
+        policy: RoutingPolicy
+    ) async -> RouteResolution {
+        let confirmationRequired = requiresConfirmation(
+            provider: provider,
+            capability: plan.capability,
+            policy: policy
+        )
+
+        let mode: ExecutionMode = policy.dryRun ? .dryRun : .live
+        let result: ExecutionResult
+        if policy.dryRun {
+            result = .success(
+                metadata: [
+                    "status": .string("dry_run"),
+                    "provider": .string(provider.descriptor.id),
+                ]
+            )
+        } else if confirmationRequired && policy.confirmationGranted == false {
+            result = .success(
+                metadata: [
+                    "status": .string("awaiting_confirmation"),
+                    "provider": .string(provider.descriptor.id),
+                ]
+            )
+        } else {
+            result = await provider.execute(plan: plan, mode: mode)
+        }
+
+        return RouteResolution(
+            request: request,
+            plan: plan,
+            providerID: provider.descriptor.id,
+            providerDisplayName: provider.descriptor.displayName,
+            usedEscalation: usedEscalation,
+            confirmationRequired: confirmationRequired && policy.confirmationGranted == false && policy.dryRun == false,
+            executionMode: mode,
+            result: result
+        )
+    }
+
+    private func requiresConfirmation(
+        provider: any DispatchProvider,
+        capability: CapabilityID,
+        policy: RoutingPolicy
+    ) -> Bool {
+        switch provider.confirmationBehavior {
+        case .never:
+            return false
+        case .always:
+            return true
+        case .destructiveOnly:
+            guard let definition = capabilityRegistry.definition(for: capability) else {
+                return false
+            }
+            return definition.destructiveByDefault || (provider.descriptor.kind == .external && policy.requireConfirmationForExternal)
+        }
+    }
+
+    private func persist(resolution: RouteResolution) async throws {
+        let event = DispatchEvent(
+            rawInput: resolution.request.rawInput,
+            routerPlan: resolution.plan,
+            providerID: resolution.providerID,
+            parameters: resolution.plan.parameters,
+            result: resolution.result
+        )
+        try await eventStore.store(event)
+    }
+}
+
+public extension RouterPlan {
+    func prettyPrintedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(self)
+        return String(decoding: data, as: UTF8.self)
+    }
+}

@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Build artifacts
+DerivedData/
+
+# Agent configs (personal)
+.claude/
+.agents/
+docs/plans/
+
+# Compiled index cache (generated at runtime)
+compiled_index.json
+
+# Xcode local package copies
+OpenDispatchApp/SkillCompiler/
+
+# Task tracking (internal)
+*.tasks.json

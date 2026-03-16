@@ -1,0 +1,17 @@
+{
+  "repository": "OpenDispatch Official",
+  "skills": [
+    {
+      "name": "ticktick_add_task",
+      "path": "ticktick-add-task"
+    },
+    {
+      "name": "shortcut_task_create",
+      "path": "shortcut-task-create"
+    },
+    {
+      "name": "tesla",
+      "path": "tesla"
+    }
+  ]
+}
