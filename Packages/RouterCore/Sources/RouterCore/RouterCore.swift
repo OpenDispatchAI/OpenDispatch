@@ -209,6 +209,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
     public let shortcutArguments: [String: JSONValue]?
     public let originalExample: String
     public let language: String
+    public let isNegative: Bool
 
     public var requiresParameterExtraction: Bool {
         guard let parameters else { return false }
@@ -225,7 +226,8 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         parameters: [ParameterSchema]?,
         shortcutArguments: [String: JSONValue]?,
         originalExample: String,
-        language: String
+        language: String,
+        isNegative: Bool = false
     ) {
         self.embedding = embedding
         self.skillID = skillID
@@ -237,6 +239,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         self.shortcutArguments = shortcutArguments
         self.originalExample = originalExample
         self.language = language
+        self.isNegative = isNegative
     }
 }
 
@@ -258,11 +261,35 @@ public struct CompiledIndex: Hashable, Codable, Sendable {
     }
 
     public func nearestNeighbors(to query: [Float], count: Int) -> [MatchCandidate] {
-        let scored = entries.map { entry -> (entry: CompiledEntry, distance: Double) in
+        // Score all positive entries
+        let positiveScored = entries.filter { $0.isNegative == false }
+            .map { entry -> (entry: CompiledEntry, distance: Double) in
+                (entry, cosineDistance(query, entry.embedding))
+            }
+
+        // Find closest negative example per action (if any)
+        var negativePenalties: [String: Double] = [:]
+        for entry in entries where entry.isNegative {
             let dist = cosineDistance(query, entry.embedding)
-            return (entry, dist)
+            let key = "\(entry.skillID)/\(entry.actionID)"
+            // The closer the input is to a negative example, the bigger the penalty.
+            // penalty = max(0, 1 - distance) means identical = 1.0 penalty, far away = 0
+            let penalty = max(0.0, 1.0 - dist)
+            if penalty > (negativePenalties[key] ?? 0) {
+                negativePenalties[key] = penalty
+            }
         }
-        let sorted = scored.sorted { $0.distance < $1.distance }
+
+        // Apply penalties: increase distance for actions with close negative matches
+        let adjusted = positiveScored.map { item -> (entry: CompiledEntry, distance: Double) in
+            let key = "\(item.entry.skillID)/\(item.entry.actionID)"
+            if let penalty = negativePenalties[key] {
+                return (item.entry, item.distance + penalty * 0.2)
+            }
+            return item
+        }
+
+        let sorted = adjusted.sorted { $0.distance < $1.distance }
 
         // Deduplicate: keep only the closest match per skill+action pair
         var seen = Set<String>()
@@ -888,7 +915,8 @@ public actor Router {
     }
 
     private func validate(_ plan: RouterPlan) throws -> RouterPlan {
-        guard (0 ... 1).contains(plan.confidence) else {
+        // Allow small float precision overshoot (e.g., 1.0000001)
+        guard (-0.001 ... 1.001).contains(plan.confidence) else {
             throw RouterError.invalidConfidence(plan.confidence)
         }
         guard capabilityRegistry.contains(plan.capability) else {

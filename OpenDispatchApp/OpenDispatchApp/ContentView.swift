@@ -47,95 +47,97 @@ private struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Dispatch")
-                        .font(.headline)
-                    Text("Planner: \(appState.backendSelection.title)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if appState.dryRunEnabled {
-                        Text("Dry Run Mode is enabled. External actions will be planned, but not actually launched.")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-                    TextField("Type a command", text: $appState.commandInput, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($inputFocused)
-                        .submitLabel(.done)
-                        .onSubmit {
-                            inputFocused = false
-                        }
-                    HStack {
-                        Button(speechCapture.isListening ? "Stop Listening" : "Listen") {
-                            Task {
-                                if speechCapture.isListening {
-                                    speechCapture.stop()
-                                } else {
-                                    await speechCapture.start()
-                                }
-                            }
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Dispatch") {
-                            Task {
-                                await appState.submitCurrentInput(
-                                    source: speechCapture.transcript.isEmpty ? .text : .speech
-                                )
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(appState.commandInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-
-                    if let error = speechCapture.errorMessage, error.isEmpty == false {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
-                    if let error = appState.lastError, error.isEmpty == false {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
-                    if let latestLog = appState.executionLogs.first {
-                        Text(latestLog)
+            ScrollView {
+                VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Dispatch")
+                            .font(.headline)
+                        Text("Planner: \(appState.backendSelection.title)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if appState.dryRunEnabled {
+                            Text("Dry Run Mode is enabled. External actions will be planned, but not actually launched.")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
+                        TextField("Type a command", text: $appState.commandInput, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($inputFocused)
+                            .submitLabel(.done)
+                            .onSubmit {
+                                inputFocused = false
+                            }
+                        HStack {
+                            Button(speechCapture.isListening ? "Stop Listening" : "Listen") {
+                                Task {
+                                    if speechCapture.isListening {
+                                        speechCapture.stop()
+                                    } else {
+                                        await speechCapture.start()
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Dispatch") {
+                                inputFocused = false
+                                Task {
+                                    await appState.submitCurrentInput(
+                                        source: speechCapture.transcript.isEmpty ? .text : .speech
+                                    )
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(appState.commandInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        if let error = speechCapture.errorMessage, error.isEmpty == false {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+
+                        if let error = appState.lastError, error.isEmpty == false {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+
+                        if let latestLog = appState.executionLogs.first {
+                            Text(latestLog)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Recent Events")
+                                .font(.headline)
+                            Spacer()
+                            TextField("Search", text: $searchText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 180)
+                        }
+
+                        ForEach(filteredEvents) { event in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(event.rawInput)
+                                    .font(.body)
+                                Text("\(event.capability) -> \(event.providerID)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(event.timestamp, style: .time)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
                 }
                 .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Recent Events")
-                            .font(.headline)
-                        Spacer()
-                        TextField("Search", text: $searchText)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 180)
-                    }
-
-                    List(filteredEvents) { event in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(event.rawInput)
-                                .font(.body)
-                            Text("\(event.capability) -> \(event.providerID)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(event.timestamp, style: .time)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .listStyle(.plain)
-                }
             }
-            .padding()
             .navigationTitle("OpenDispatch")
             .alert(
                 "Confirm Action",
@@ -185,27 +187,15 @@ private struct HomeView: View {
                     Text("Select where to send this \(label) action.")
                 }
             }
-            .task(id: appState.captureModeRequested) {
-                guard appState.captureModeRequested else { return }
+            .onChange(of: appState.captureModeRequested) { _, requested in
+                guard requested else { return }
                 inputFocused = true
-                await speechCapture.start()
-                appState.captureModeRequested = false
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Button("Dismiss") {
-                        inputFocused = false
-                    }
-                    Spacer()
-                    Button("Dispatch") {
-                        inputFocused = false
-                        Task {
-                            await appState.submitCurrentInput(source: .text)
-                        }
-                    }
-                    .disabled(appState.commandInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Task {
+                    await speechCapture.start()
+                    appState.captureModeRequested = false
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: speechCapture.transcript) { _, newValue in
                 if newValue.isEmpty == false {
                     appState.commandInput = newValue
@@ -347,6 +337,7 @@ private struct SkillManagerView: View {
 
 private struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var newLanguageCode = ""
 
     private var sortedCapabilities: [String] {
         appState.providerOptions.keys.sorted()
@@ -355,6 +346,46 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Languages") {
+                    ForEach(appState.configuredLanguages, id: \.self) { lang in
+                        HStack {
+                            Text(Locale.current.localizedString(forLanguageCode: lang) ?? lang)
+                            Spacer()
+                            if appState.configuredLanguages.count > 1 {
+                                Button(role: .destructive) {
+                                    appState.configuredLanguages.removeAll { $0 == lang }
+                                    Task { await appState.recompileSkillIndex() }
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                            }
+                        }
+                    }
+                    HStack {
+                        TextField("Language code (e.g., nl)", text: $newLanguageCode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Add") {
+                            let code = newLanguageCode.trimmingCharacters(in: .whitespaces).lowercased()
+                            guard code.isEmpty == false,
+                                  appState.configuredLanguages.contains(code) == false else { return }
+                            appState.configuredLanguages.append(code)
+                            newLanguageCode = ""
+                            Task { await appState.recompileSkillIndex() }
+                        }
+                        .disabled(newLanguageCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    if appState.configuredLanguages != ["en"] {
+                        Label("Multilingual support requires downloading an additional model (~470MB). Coming soon.", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("Multilingual routing requires a downloadable model. English is supported out of the box.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Model Backend") {
                     Picker("Planner", selection: Binding(
                         get: { appState.backendSelection },
@@ -694,6 +725,7 @@ private struct CompiledSkillDetailView: View {
                                 $0.skillID == manifest.skillID
                                     && $0.actionID == action.id
                                     && $0.originalExample == example
+                                    && $0.isNegative == false
                             }.count ?? 0
                             HStack {
                                 Text("• \(example)")
@@ -703,6 +735,68 @@ private struct CompiledSkillDetailView: View {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.caption2)
                                         .foregroundStyle(.green)
+                                }
+                            }
+                        }
+                    }
+
+                    if action.negativeExamples.isEmpty == false {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Negative Examples (\(action.negativeExamples.count))")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.red)
+                            ForEach(action.negativeExamples, id: \.self) { example in
+                                let entryCount = index?.entries.filter {
+                                    $0.skillID == manifest.skillID
+                                        && $0.actionID == action.id
+                                        && $0.originalExample == example
+                                        && $0.isNegative
+                                }.count ?? 0
+                                HStack {
+                                    Text("• \(example)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    if entryCount > 0 {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Show compiled embeddings grouped by language
+                    if let index {
+                        let actionEntries = index.entries.filter {
+                            $0.skillID == manifest.skillID
+                                && $0.actionID == action.id
+                                && $0.isNegative == false
+                        }
+                        let languages = Set(actionEntries.map(\.language)).sorted()
+
+                        if languages.count > 1 || languages.first != "en" {
+                            ForEach(languages, id: \.self) { language in
+                                let langEntries = actionEntries.filter { $0.language == language }
+                                let langName = Locale.current.localizedString(forLanguageCode: language) ?? language
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Compiled (\(langName))")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.blue)
+                                    ForEach(langEntries, id: \.originalExample) { entry in
+                                        HStack {
+                                            Text("• \(entry.originalExample)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Spacer()
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2)
+                                                .foregroundStyle(.blue)
+                                        }
+                                    }
                                 }
                             }
                         }

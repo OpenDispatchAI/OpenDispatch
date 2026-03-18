@@ -45,6 +45,7 @@ public struct YAMLSkillAction: Hashable, Codable, Sendable {
     public let shortcutArguments: [String: JSONValue]?
     public let parameters: [ParameterSchema]?
     public let examples: [String]
+    public let negativeExamples: [String]
     public let confirmation: YAMLConfirmation?
 
     public init(
@@ -54,6 +55,7 @@ public struct YAMLSkillAction: Hashable, Codable, Sendable {
         shortcutArguments: [String: JSONValue]? = nil,
         parameters: [ParameterSchema]? = nil,
         examples: [String],
+        negativeExamples: [String] = [],
         confirmation: YAMLConfirmation? = nil
     ) {
         self.id = id
@@ -62,6 +64,7 @@ public struct YAMLSkillAction: Hashable, Codable, Sendable {
         self.shortcutArguments = shortcutArguments
         self.parameters = parameters
         self.examples = examples
+        self.negativeExamples = negativeExamples
         self.confirmation = confirmation
     }
 

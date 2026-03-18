@@ -74,6 +74,8 @@ actions:
 | `shortcut_arguments` | No | map | Literal JSON payload sent to the bridge shortcut when this action executes. Keys with `{{placeholder}}` values indicate fields that need runtime extraction. |
 | `parameters` | No | list | Parameters that need to be extracted from user input at runtime (Phase 2). If absent or empty, the action executes immediately without LLM extraction. |
 | `examples` | Yes | list | Natural language phrases that should trigger this action. These are the core of the routing system — they get embedded as vectors during compilation. **At least one example is required.** |
+| `negative_examples` | No | list | Phrases that should NOT trigger this action. Used to prevent misrouting when similar commands exist (e.g., "open my car windows" should not trigger "unlock"). Penalizes confidence when input is close to a negative example. |
+| `confirmation` | No | string | Per-action confirmation behavior: `required` (always ask), `none` (never ask), `destructive_only` (ask only for destructive capabilities). Defaults to no confirmation. |
 
 ### Parameters
 
@@ -130,14 +132,60 @@ Examples are the most important part of a skill definition. They determine how a
 - **Don't overlap with other actions.** If both "Start Climate" and "Stop Climate" exist, make sure examples are distinct. "Turn on the AC" vs "turn off the AC".
 - **Think multilingual.** If your users speak multiple languages, the compile step can translate examples. But starting with good native-language examples produces the best results.
 
+### Negative Examples
+
+Use `negative_examples` to prevent misrouting when actions share similar vocabulary:
+
+```yaml
+- id: vehicle.unlock
+  title: "Unlock"
+  examples:
+    - unlock my car
+    - unlock the tesla
+  negative_examples:
+    - open my car windows
+    - open the trunk
+    - open the frunk
+```
+
+When the user's input is close to a negative example, the action's confidence is penalized. This prevents "open my car windows" from routing to unlock (which has "open the car" as a similar phrase).
+
+Guidelines for negative examples:
+- **Only add when needed.** Most actions don't need negative examples. Add them when you see misrouting in the Debug tab.
+- **Use phrases from other actions.** If "open my car windows" keeps triggering unlock, add it as a negative example for unlock.
+- **Keep the list short.** 2-4 negative examples per action is usually sufficient.
+- **Check the Debug tab** to verify that negative penalties aren't too aggressive — an action should still match its own examples.
+
 ### What Happens to Examples
 
-During compilation, each example gets converted into a numerical vector (embedding) using Apple's NLEmbedding framework. At runtime, the user's spoken command is also converted to a vector, and the system finds the closest match using cosine similarity.
+During compilation, each example (and negative example) gets converted into a numerical vector (embedding) using the bundled sentence transformer. At runtime, the user's spoken command is also converted to a vector, and the system finds the closest match using cosine similarity. Negative examples penalize actions whose counter-examples are close to the input.
 
 This means:
 - Examples don't need to match exactly — "open my car" will match "unlock the car" because they're semantically similar.
 - More diverse examples create better coverage of the semantic space around an action.
 - Brand names and specific nouns ("tesla", "frunk") are powerful disambiguators.
+- Negative examples pull the decision boundary away from overlapping phrases.
+
+### Per-Action Confirmation
+
+Use `confirmation` to control whether the user is prompted before execution:
+
+```yaml
+- id: vehicle.frunk.open
+  title: "Open Frunk"
+  confirmation: required    # can't close via software — always ask
+  ...
+
+- id: vehicle.unlock
+  confirmation: none        # safe to execute without asking
+  ...
+```
+
+Values:
+- `required` — always prompt for confirmation
+- `none` — execute without confirmation
+- `destructive_only` — prompt only if the capability is marked destructive in the registry
+- (omitted) — defaults to no confirmation
 
 ## Built-in Skills
 

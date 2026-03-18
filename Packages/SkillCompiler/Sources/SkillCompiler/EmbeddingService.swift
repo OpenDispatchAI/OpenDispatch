@@ -1,21 +1,21 @@
 import Foundation
 import NaturalLanguage
 
+/// Protocol for embedding backends (e.g., Core ML sentence transformers).
+public protocol EmbeddingBackend: Sendable {
+    func embed(_ text: String) -> [Float]?
+}
+
 public struct EmbeddingService: Sendable {
+    private let backend: any EmbeddingBackend
 
-    public init() {}
+    public init(backend: any EmbeddingBackend) {
+        self.backend = backend
+    }
 
-    /// Embed a text string into a vector using NLEmbedding for the given language.
-    /// Returns nil if sentence embeddings are not available for the language.
+    /// Embed a text string into a vector.
     public func embed(_ text: String, language: String) -> [Float]? {
-        let nlLanguage = NLLanguage(rawValue: language)
-        guard let embedding = NLEmbedding.sentenceEmbedding(for: nlLanguage) else {
-            return nil
-        }
-        guard let vector = embedding.vector(for: text) else {
-            return nil
-        }
-        return vector.map { Float($0) }
+        backend.embed(text)
     }
 
     /// Cosine distance between two vectors. 0 = identical, 2 = opposite.
@@ -30,19 +30,6 @@ public struct EmbeddingService: Sendable {
         let denom = sqrt(normA) * sqrt(normB)
         guard denom > 0 else { return 1.0 }
         return Double(1.0 - (dot / denom))
-    }
-
-    /// Check which languages have sentence embedding support on this device.
-    public func supportedLanguages() -> [String] {
-        let candidates: [NLLanguage] = [
-            .english, .spanish, .french, .german, .italian,
-            .portuguese, .dutch, .russian, .simplifiedChinese,
-            .japanese, .korean, .arabic, .turkish, .polish,
-            .swedish, .danish, .norwegian, .finnish,
-        ]
-        return candidates
-            .filter { NLEmbedding.sentenceEmbedding(for: $0) != nil }
-            .map(\.rawValue)
     }
 
     /// Detect the dominant language of a text string.

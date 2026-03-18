@@ -2,12 +2,12 @@ skill_id: tesla
 name: Tesla
 version: 1.0.0
 bridge_shortcut: "OpenDispatch - Tesla V1"
-bridge_shortcut_share_url: https://www.icloud.com/shortcuts/REPLACE_ME
+bridge_shortcut_share_url: https://www.icloud.com/shortcuts/f21f0121c47b4910a27e76193ee27254
 
 actions:
   - id: vehicle.unlock
     title: "Unlock"
-    description: "Unlock your Tesla vehicle"
+    description: "Unlock the car doors so you can get in"
     shortcut_arguments:
       action: vehicle.unlock
       vehicle: default
@@ -15,8 +15,12 @@ actions:
       - unlock my car
       - unlock the tesla
       - unlock my tesla
-      - open the car
-      - open my tesla
+      - unlock the car doors
+      - unlock the doors
+    negative_examples:
+      - open my car windows
+      - open the trunk
+      - open the frunk
 
   - id: vehicle.lock
     title: "Lock"
@@ -198,6 +202,8 @@ actions:
       - crack the windows
       - open the windows a little
       - vent tesla windows
+      - open my car windows
+      - open the car windows
 
   - id: vehicle.close_windows
     title: "Close Windows"

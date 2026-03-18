@@ -70,6 +70,7 @@ struct PendingDestinationChoice: Identifiable {
 
 @MainActor
 final class AppState: ObservableObject {
+    static weak var shared: AppState?
     @Published var commandInput = AppState.defaultDispatchCommand
     @Published var lastPlanJSON = ""
     @Published var executionLogs: [String] = []
@@ -85,6 +86,7 @@ final class AppState: ObservableObject {
     @Published var compileStatus: CompileStatus = .notCompiled
     @Published var compiledManifests: [YAMLSkillManifest] = []
     @Published var lastMatchCandidates: [MatchCandidate] = []
+    @Published var configuredLanguages: [String] = ["en"]
 
     let modelContainer: ModelContainer
     private(set) var compiledIndex: CompiledIndex?
@@ -115,6 +117,7 @@ final class AppState: ObservableObject {
         escalationEnabled = stored["escalationEnabled"] as? Bool ?? false
         dryRunEnabled = stored["dryRunEnabled"] as? Bool ?? false
         providerPreferences = stored["providerPreferences"] as? [String: String] ?? [:]
+        AppState.shared = self
     }
 
     func bootstrap() async {
@@ -170,10 +173,15 @@ final class AppState: ObservableObject {
             let totalExamples = manifests.flatMap(\.actions).flatMap(\.examples).count
             compileStatus = .compiling(progress: "Embedding \(totalExamples) examples...")
 
-            let compiler = SkillCompiler(languages: ["en"])
-            let index = try compiler.compile(manifests: manifests)
+            guard let backend = ParaphraseBackend() else {
+                compileStatus = .failed("Embedding model failed to load")
+                appendLog("ParaphraseBackend failed to initialize — check that the model is in the bundle")
+                return
+            }
+            let embeddingService = EmbeddingService(backend: backend)
+            let compiler = SkillCompiler(languages: configuredLanguages, embeddingService: embeddingService)
+            let index = try await compiler.compile(manifests: manifests)
 
-            // Cache to disk
             try CompiledIndexStore.save(index, to: CompiledIndexStore.defaultURL())
             appendLog("Cached compiled index to disk")
 
@@ -200,8 +208,26 @@ final class AppState: ObservableObject {
     private func loadYAMLManifests() -> [YAMLSkillManifest] {
         var manifests: [YAMLSkillManifest] = []
 
+        // Load from SampleSkills folder reference (blue folder in Xcode)
+        if let sampleSkillsURL = Bundle.main.url(forResource: "SampleSkills", withExtension: nil) {
+            appendLog("Found SampleSkills folder in bundle")
+            if let skillDirs = try? FileManager.default.contentsOfDirectory(
+                at: sampleSkillsURL, includingPropertiesForKeys: nil
+            ) {
+                for dir in skillDirs {
+                    let yamlURL = dir.appendingPathComponent("skill.yaml")
+                    if let manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
+                        if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
+                            manifests.append(manifest)
+                            appendLog("Loaded skill: \(manifest.name) (\(manifest.actions.count) actions)")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also pick up any loose .yaml files in bundle root (for future use)
         if let yamlURLs = Bundle.main.urls(forResourcesWithExtension: "yaml", subdirectory: nil) {
-            appendLog("Found \(yamlURLs.count) YAML files in bundle")
             for url in yamlURLs {
                 if let manifest = try? YAMLSkillParser.parse(contentsOf: url) {
                     if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
@@ -210,8 +236,10 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-        } else {
-            appendLog("No .yaml files found in app bundle")
+        }
+
+        if manifests.isEmpty {
+            appendLog("No YAML skills found in app bundle")
         }
 
         return manifests
@@ -226,6 +254,7 @@ final class AppState: ObservableObject {
         guard input.isEmpty == false else { return }
 
         do {
+            appendLog("Input: \"\(input)\"")
             appendLog("Using \(backendSelection.title) planner")
             let runtime = try await makeRuntime()
             let request = RouterRequest(rawInput: input, source: source)
@@ -253,7 +282,7 @@ final class AppState: ObservableObject {
                 appendLog(executionLogMessage(for: resolution.result))
             }
 
-            commandInput = source == .speech ? commandInput : ""
+            // Keep the input visible so the user can see what was dispatched
             lastError = nil
             validationMessages = runtime.validationMessages
             await refreshProviderOptions(using: runtime.capabilityRegistry)
@@ -669,10 +698,13 @@ final class AppState: ObservableObject {
         case .appleFoundation:
             backend = AppleFoundationBackend()
         case .embeddingRouter:
-            if let index = compiledIndex {
-                backend = EmbeddingRouterBackend(compiledIndex: index)
+            if let index = compiledIndex, let paraphrase = ParaphraseBackend() {
+                backend = EmbeddingRouterBackend(
+                    compiledIndex: index,
+                    embeddingService: EmbeddingService(backend: paraphrase)
+                )
             } else {
-                appendLog("No compiled index available, falling back to rule-based")
+                appendLog("No compiled index or embedding model available, falling back to rule-based")
                 backend = RuleBasedBackend()
             }
         }

@@ -9,7 +9,7 @@ import Testing
 @Suite("EmbeddingService")
 struct EmbeddingServiceTests {
 
-    let service = EmbeddingService()
+    let service = EmbeddingService(backend: NLEmbeddingBackend())
 
     @Test("Embeds a string and returns a non-empty vector")
     func embedString() {
@@ -32,18 +32,6 @@ struct EmbeddingServiceTests {
         let distSimilar = service.cosineDistance(v1, v2)
         let distDissimilar = service.cosineDistance(v1, v3)
         #expect(distSimilar < distDissimilar)
-    }
-
-    @Test("English is supported")
-    func englishSupported() {
-        let supported = service.supportedLanguages()
-        #expect(supported.contains("en"))
-    }
-
-    @Test("Returns nil for unsupported language")
-    func unsupportedLanguage() {
-        let vector = service.embed("test", language: "xx_FAKE")
-        #expect(vector == nil)
     }
 
     @Test("Detects English text")
@@ -101,19 +89,19 @@ struct SkillCompilerTests {
     )
 
     @Test("Compiles manifests into index entries")
-    func compileManifests() throws {
-        let compiler = SkillCompiler(languages: ["en"])
-        let index = try compiler.compile(manifests: [Self.teslaManifest])
-        // 2 actions: 3 + 2 examples = 5 entries
-        #expect(index.entries.count == 5)
+    func compileManifests() async throws {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        let index = try await compiler.compile(manifests: [Self.teslaManifest])
+        // 2 actions: (3 examples + 1 desc) + (2 examples + 1 desc) = 7 entries
+        #expect(index.entries.count == 7)
         #expect(index.entries.allSatisfy { $0.embedding.isEmpty == false })
         #expect(index.entries.allSatisfy { $0.skillID == "tesla" })
     }
 
     @Test("Preserves shortcut arguments in compiled entries")
-    func preservesShortcutArguments() throws {
-        let compiler = SkillCompiler(languages: ["en"])
-        let index = try compiler.compile(manifests: [Self.teslaManifest])
+    func preservesShortcutArguments() async throws {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        let index = try await compiler.compile(manifests: [Self.teslaManifest])
         let unlockEntries = index.entries.filter { $0.actionID == "vehicle.unlock" }
         #expect(unlockEntries.allSatisfy {
             $0.shortcutArguments?["action"]?.stringValue == "unlock"
@@ -121,25 +109,25 @@ struct SkillCompilerTests {
     }
 
     @Test("Parameterless actions have nil parameters")
-    func parameterlessActions() throws {
-        let compiler = SkillCompiler(languages: ["en"])
-        let index = try compiler.compile(manifests: [Self.teslaManifest])
+    func parameterlessActions() async throws {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        let index = try await compiler.compile(manifests: [Self.teslaManifest])
         #expect(index.entries.allSatisfy { $0.parameters == nil })
     }
 
     @Test("Actions with parameters preserve them")
-    func actionsWithParameters() throws {
-        let compiler = SkillCompiler(languages: ["en"])
-        let index = try compiler.compile(manifests: [Self.remindersManifest])
+    func actionsWithParameters() async throws {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        let index = try await compiler.compile(manifests: [Self.remindersManifest])
         #expect(index.entries.allSatisfy { $0.parameters != nil })
         #expect(index.entries.allSatisfy { $0.requiresParameterExtraction })
     }
 
     @Test("Throws when no languages configured")
-    func noLanguages() {
-        let compiler = SkillCompiler(languages: [])
-        #expect(throws: SkillCompilerError.self) {
-            try compiler.compile(manifests: [Self.teslaManifest])
+    func noLanguages() async {
+        let compiler = SkillCompiler(languages: [], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        await #expect(throws: SkillCompilerError.self) {
+            try await compiler.compile(manifests: [Self.teslaManifest])
         }
     }
 }
@@ -150,17 +138,17 @@ struct SkillCompilerTests {
 struct EndToEndRoutingTests {
 
     /// Compile both skills and query with real NLEmbedding
-    static func compileTestIndex() throws -> CompiledIndex {
-        let compiler = SkillCompiler(languages: ["en"])
-        return try compiler.compile(manifests: [
+    static func compileTestIndex() async throws -> CompiledIndex {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        return try await compiler.compile(manifests: [
             SkillCompilerTests.teslaManifest,
             SkillCompilerTests.remindersManifest,
         ])
     }
 
     @Test("'unlock my tesla' routes to vehicle.unlock")
-    func unlockTesla() throws {
-        let index = try Self.compileTestIndex()
+    func unlockTesla() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("unlock my tesla", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -171,8 +159,8 @@ struct EndToEndRoutingTests {
     }
 
     @Test("'add milk' routes to task.create")
-    func addMilk() throws {
-        let index = try Self.compileTestIndex()
+    func addMilk() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("add milk", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -183,8 +171,8 @@ struct EndToEndRoutingTests {
     }
 
     @Test("'lock the car' routes to vehicle.lock not vehicle.unlock")
-    func lockVsUnlock() throws {
-        let index = try Self.compileTestIndex()
+    func lockVsUnlock() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("lock the car", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -194,8 +182,8 @@ struct EndToEndRoutingTests {
     }
 
     @Test("'remind me to buy eggs' routes to task.create")
-    func remindBuyEggs() throws {
-        let index = try Self.compileTestIndex()
+    func remindBuyEggs() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("remind me to buy eggs", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -205,8 +193,8 @@ struct EndToEndRoutingTests {
     }
 
     @Test("Top match for 'unlock my tesla' has high confidence")
-    func highConfidence() throws {
-        let index = try Self.compileTestIndex()
+    func highConfidence() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("unlock my tesla", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -216,8 +204,8 @@ struct EndToEndRoutingTests {
     }
 
     @Test("Returns multiple candidates with decreasing confidence")
-    func multipleCandidates() throws {
-        let index = try Self.compileTestIndex()
+    func multipleCandidates() async throws {
+        let index = try await Self.compileTestIndex()
         let service = EmbeddingService()
         guard let query = service.embed("open my car", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
@@ -237,9 +225,9 @@ struct EndToEndRoutingTests {
 struct CompiledIndexStoreTests {
 
     @Test("Round-trips index through save and load")
-    func saveAndLoad() throws {
-        let compiler = SkillCompiler(languages: ["en"])
-        let index = try compiler.compile(manifests: [SkillCompilerTests.teslaManifest])
+    func saveAndLoad() async throws {
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: EmbeddingService(backend: NLEmbeddingBackend()))
+        let index = try await compiler.compile(manifests: [SkillCompilerTests.teslaManifest])
 
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("test_index_\(UUID().uuidString).json")

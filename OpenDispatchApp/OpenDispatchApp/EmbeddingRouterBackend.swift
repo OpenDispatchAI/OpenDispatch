@@ -18,7 +18,7 @@ struct EmbeddingRouterBackend: RouterPlanningBackend, Sendable {
 
     init(
         compiledIndex: CompiledIndex,
-        embeddingService: EmbeddingService = EmbeddingService(),
+        embeddingService: EmbeddingService,
         confidenceThreshold: Double = 0.4,
         ambiguityGapThreshold: Double = 0.15,
         topK: Int = 5

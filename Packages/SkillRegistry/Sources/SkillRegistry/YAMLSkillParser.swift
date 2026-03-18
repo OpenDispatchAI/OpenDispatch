@@ -65,6 +65,8 @@ public enum YAMLSkillParser {
         let parameters = (dict["parameters"] as? [[String: Any]])
             .map { $0.map { parseParameter($0) } }
 
+        let negativeExamples = dict["negative_examples"] as? [String] ?? []
+
         let confirmation = (dict["confirmation"] as? String)
             .flatMap { YAMLConfirmation(rawValue: $0) }
 
@@ -75,6 +77,7 @@ public enum YAMLSkillParser {
             shortcutArguments: shortcutArguments,
             parameters: parameters,
             examples: examples,
+            negativeExamples: negativeExamples,
             confirmation: confirmation
         )
     }
