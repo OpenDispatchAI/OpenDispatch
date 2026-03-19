@@ -1,0 +1,32 @@
+skill_id: apple_calendar
+name: Apple Calendar
+version: 1.0.0
+built_in: true
+
+actions:
+  - id: calendar.event.create
+    title: "Create Event"
+    description: "Create a new calendar event"
+    confirmation: none
+    parameters:
+      - name: title
+        type: string
+        required: true
+      - name: start_date
+        type: date
+        required: false
+      - name: end_date
+        type: date
+        required: false
+      - name: notes
+        type: string
+        required: false
+    examples:
+      - schedule a meeting tomorrow at 2
+      - add dentist appointment on friday
+      - create an event for lunch with Sarah
+      - put a call on my calendar at 3pm
+      - block off tomorrow morning
+    negative_examples:
+      - remind me about the meeting
+      - remind me to go to the dentist

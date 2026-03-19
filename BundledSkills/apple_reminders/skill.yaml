@@ -1,0 +1,43 @@
+skill_id: apple_reminders
+name: Apple Reminders
+version: 1.0.0
+built_in: true
+
+actions:
+  - id: task.create
+    title: "Create Reminder"
+    description: "Create a new reminder in Apple Reminders"
+    confirmation: none
+    parameters:
+      - name: title
+        type: string
+        required: true
+      - name: notes
+        type: string
+        required: false
+      - name: due_date
+        type: date
+        required: false
+    examples:
+      - remind me to call mom
+      - add milk to my list
+      - remind me to pick up the kids at 3
+      - new reminder buy groceries
+      - remind me tomorrow to send the invoice
+    negative_examples:
+      - add milk to the shopping list
+      - put it on my grocery list
+
+  - id: task.complete
+    title: "Complete Reminder"
+    description: "Mark a reminder as completed"
+    confirmation: destructive_only
+    parameters:
+      - name: title
+        type: string
+        required: true
+    examples:
+      - mark call mom as done
+      - complete the groceries reminder
+      - I did the laundry
+      - check off buy milk
