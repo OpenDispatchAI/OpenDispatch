@@ -434,6 +434,12 @@ public struct ExecutionResult: Hashable, Codable, Sendable {
     }
 }
 
+// MARK: - SkillExecutor
+
+public protocol SkillExecutor: Sendable {
+    func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult
+}
+
 public struct DispatchEvent: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let timestamp: Date
