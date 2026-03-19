@@ -1,6 +1,11 @@
 import Foundation
 import RouterCore
 
+public enum SkillSource: String, Hashable, Codable, Sendable {
+    case bundle
+    case user
+}
+
 public struct YAMLSkillManifest: Hashable, Codable, Sendable {
     public let skillID: String
     public let name: String
@@ -9,6 +14,7 @@ public struct YAMLSkillManifest: Hashable, Codable, Sendable {
     public let bridgeShortcut: String?
     public let bridgeShortcutShareURL: String?
     public let actions: [YAMLSkillAction]
+    public let source: SkillSource
 
     public init(
         skillID: String,
@@ -17,7 +23,8 @@ public struct YAMLSkillManifest: Hashable, Codable, Sendable {
         builtIn: Bool = false,
         bridgeShortcut: String? = nil,
         bridgeShortcutShareURL: String? = nil,
-        actions: [YAMLSkillAction]
+        actions: [YAMLSkillAction],
+        source: SkillSource = .user
     ) {
         self.skillID = skillID
         self.name = name
@@ -26,6 +33,20 @@ public struct YAMLSkillManifest: Hashable, Codable, Sendable {
         self.bridgeShortcut = bridgeShortcut
         self.bridgeShortcutShareURL = bridgeShortcutShareURL
         self.actions = actions
+        self.source = source
+    }
+
+    public func withSource(_ source: SkillSource) -> YAMLSkillManifest {
+        YAMLSkillManifest(
+            skillID: skillID,
+            name: name,
+            version: version,
+            builtIn: builtIn,
+            bridgeShortcut: bridgeShortcut,
+            bridgeShortcutShareURL: bridgeShortcutShareURL,
+            actions: actions,
+            source: source
+        )
     }
 }
 

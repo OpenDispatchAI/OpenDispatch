@@ -142,6 +142,19 @@ struct YAMLSkillParserTests {
         }
     }
 
+    @Test("Manifest source defaults to .user")
+    func manifestSourceDefaultsToUser() throws {
+        let manifest = try YAMLSkillParser.parse(Self.teslaYAML)
+        #expect(manifest.source == .user)
+    }
+
+    @Test("Manifest source can be set to .bundle")
+    func manifestSourceCanBeBundle() throws {
+        var manifest = try YAMLSkillParser.parse(Self.remindersYAML)
+        manifest = manifest.withSource(.bundle)
+        #expect(manifest.source == .bundle)
+    }
+
     @Test("Defaults name to skill_id when missing")
     func defaultsNameToSkillID() throws {
         let yaml = """
