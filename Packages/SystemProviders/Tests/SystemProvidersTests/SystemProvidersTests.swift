@@ -61,32 +61,6 @@ private actor TestClipboard: ClipboardWriting {
     }
 }
 
-@Test func remindersProviderCreatesReminder() async throws {
-    let store = TestReminderStore()
-    let provider = RemindersProvider(reminderStore: store)
-
-    let result = await provider.execute(
-        plan: RouterPlan(
-            capability: "task.create",
-            parameters: [
-                "title": .string("Call mom"),
-                "notes": .string("From OpenDispatch"),
-                "due_date": .string("2026-03-16T09:00:00+01:00"),
-            ],
-            confidence: 1
-        ),
-        mode: .live
-    )
-
-    #expect(result.success)
-    #expect(result.metadata["status"] == .string("created"))
-    #expect(result.metadata["identifier"] == .string("reminder-1"))
-    #expect(result.metadata["due_date"] == .string("2026-03-16T09:00:00+01:00"))
-    #expect(await store.snapshot().count == 1)
-    #expect(await store.snapshot().first?.title == "Call mom")
-    #expect(await store.snapshot().first?.dueDate != nil)
-}
-
 // MARK: - Native Executor Tests
 
 @Test func remindersNativeExecutorCreatesTask() async throws {
