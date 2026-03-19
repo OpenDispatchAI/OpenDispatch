@@ -290,6 +290,176 @@ public struct NotesProvider: DispatchProvider {
     }
 }
 
+// MARK: - Native Executors
+
+public struct RemindersNativeExecutor: SkillExecutor {
+    private let store: any ReminderStore
+
+    public init(store: any ReminderStore) {
+        self.store = store
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        let title = plan.parameters["title"]?.stringValue ?? ""
+        let dueDate = parseISO8601Date(plan.parameters["due_date"]?.stringValue)
+
+        if mode == .dryRun {
+            var metadata: [String: JSONValue] = [
+                "status": .string("dry_run"),
+                "title": .string(title),
+            ]
+            if let dueDateString = plan.parameters["due_date"]?.stringValue {
+                metadata["due_date"] = .string(dueDateString)
+            }
+            return .success(metadata: metadata, toolCall: ToolCall(executorID: "eventkit_reminders", payload: plan.parameters))
+        }
+
+        do {
+            switch plan.capability.rawValue {
+            case "task.create":
+                let identifier = try await store.createTask(
+                    title: title,
+                    notes: plan.parameters["notes"]?.stringValue,
+                    dueDate: dueDate
+                )
+                var metadata: [String: JSONValue] = [
+                    "status": .string("created"),
+                    "identifier": .string(identifier),
+                ]
+                if let dueDateString = plan.parameters["due_date"]?.stringValue {
+                    metadata["due_date"] = .string(dueDateString)
+                }
+                return .success(metadata: metadata, toolCall: ToolCall(executorID: "eventkit_reminders", payload: plan.parameters))
+            case "task.complete":
+                let completed = try await store.completeTask(title: title)
+                return completed
+                    ? .success(
+                        metadata: ["status": .string("completed")],
+                        toolCall: ToolCall(executorID: "eventkit_reminders", payload: plan.parameters)
+                    )
+                    : .failure(
+                        "Reminder not found.",
+                        toolCall: ToolCall(executorID: "eventkit_reminders", payload: plan.parameters)
+                    )
+            default:
+                return .failure("Unsupported reminders capability.")
+            }
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+    }
+
+    private func parseISO8601Date(_ value: String?) -> Date? {
+        guard let value, value.isEmpty == false else {
+            return nil
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
+public struct CalendarNativeExecutor: SkillExecutor {
+    private let store: any CalendarStore
+
+    public init(store: any CalendarStore) {
+        self.store = store
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        if mode == .dryRun {
+            return .success(
+                metadata: [
+                    "status": .string("dry_run"),
+                    "title": .string(plan.parameters["title"]?.stringValue ?? ""),
+                ],
+                toolCall: ToolCall(executorID: "eventkit_calendar", payload: plan.parameters)
+            )
+        }
+
+        let formatter = ISO8601DateFormatter()
+        let start = plan.parameters["start_date"]?.stringValue.flatMap(formatter.date(from:))
+        let end = plan.parameters["end_date"]?.stringValue.flatMap(formatter.date(from:))
+
+        do {
+            let identifier = try await store.createEvent(
+                title: plan.parameters["title"]?.stringValue ?? "",
+                start: start,
+                end: end,
+                notes: plan.parameters["notes"]?.stringValue
+            )
+            return .success(
+                metadata: [
+                    "status": .string("created"),
+                    "identifier": .string(identifier),
+                ],
+                toolCall: ToolCall(executorID: "eventkit_calendar", payload: plan.parameters)
+            )
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+    }
+}
+
+public struct NotesNativeExecutor: SkillExecutor {
+    private let clipboard: any ClipboardWriting
+    private let urlHandler: any URLHandling
+
+    public init(clipboard: any ClipboardWriting, urlHandler: any URLHandling) {
+        self.clipboard = clipboard
+        self.urlHandler = urlHandler
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        let body = plan.parameters["body"]?.stringValue ?? ""
+        let url = URL(string: "notes://")!
+
+        if mode == .dryRun {
+            return .success(
+                metadata: [
+                    "status": .string("dry_run"),
+                    "url": .string(url.absoluteString),
+                    "body_preview": .string(body),
+                ],
+                toolCall: ToolCall(executorID: "apple_notes_bridge", payload: plan.parameters)
+            )
+        }
+
+        await clipboard.copy(body)
+        guard await urlHandler.canOpen(url) else {
+            return .failure("Notes app cannot be opened.")
+        }
+
+        let didOpen = await urlHandler.open(url)
+        return didOpen
+            ? .success(
+                metadata: [
+                    "status": .string("opened"),
+                    "clipboard": .string("body"),
+                    "url": .string(url.absoluteString),
+                ],
+                toolCall: ToolCall(executorID: "apple_notes_bridge", payload: plan.parameters)
+            )
+            : .failure("Unable to open Notes.")
+    }
+}
+
+public struct ShortcutsRunNativeExecutor: SkillExecutor {
+    private let executor: ShortcutsExecutor
+
+    public init(urlHandler: any URLHandling) {
+        self.executor = ShortcutsExecutor(urlHandler: urlHandler)
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        await executor.execute(
+            shortcutName: plan.parameters["name"]?.stringValue ?? "",
+            parameters: plan.parameters,
+            mode: mode
+        )
+    }
+}
+
 public enum SystemProviderFactory {
     public static func defaultProviders(
         urlHandler: any URLHandling,
