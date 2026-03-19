@@ -274,6 +274,45 @@ public enum TemplateURLRenderer {
     }
 }
 
+public struct ShortcutsBridgeExecutor: SkillExecutor {
+    private let bridgeShortcut: String?
+    private let actionArguments: [String: [String: JSONValue]]
+    private let shortcutsExecutor: ShortcutsExecutor
+
+    public init(
+        bridgeShortcut: String?,
+        actionArguments: [String: [String: JSONValue]],
+        urlHandler: any URLHandling
+    ) {
+        self.bridgeShortcut = bridgeShortcut
+        self.actionArguments = actionArguments
+        self.shortcutsExecutor = ShortcutsExecutor(urlHandler: urlHandler)
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        guard let shortcutName = bridgeShortcut else {
+            return .failure("No bridge shortcut configured.")
+        }
+
+        var payload = actionArguments[plan.capability.rawValue] ?? [:]
+        for (key, value) in payload {
+            if let template = value.stringValue,
+               template.hasPrefix("{{"), template.hasSuffix("}}") {
+                let paramName = String(template.dropFirst(2).dropLast(2))
+                if let extracted = plan.parameters[paramName] {
+                    payload[key] = extracted
+                }
+            }
+        }
+
+        return await shortcutsExecutor.execute(
+            shortcutName: shortcutName,
+            parameters: payload,
+            mode: mode
+        )
+    }
+}
+
 private extension JSONValue {
     var arrayValue: [JSONValue]? {
         if case let .array(value) = self {
