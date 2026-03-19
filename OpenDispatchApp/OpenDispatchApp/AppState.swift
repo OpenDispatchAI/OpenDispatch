@@ -208,6 +208,25 @@ final class AppState: ObservableObject {
     private func loadYAMLManifests() -> [YAMLSkillManifest] {
         var manifests: [YAMLSkillManifest] = []
 
+        // Load bundled skills (native execution eligible)
+        if let bundledURL = Bundle.main.url(forResource: "BundledSkills", withExtension: nil) {
+            appendLog("Found BundledSkills folder in bundle")
+            if let skillDirs = try? FileManager.default.contentsOfDirectory(
+                at: bundledURL, includingPropertiesForKeys: nil
+            ) {
+                for dir in skillDirs {
+                    let yamlURL = dir.appendingPathComponent("skill.yaml")
+                    if var manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
+                        manifest = manifest.withSource(.bundle)
+                        if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
+                            manifests.append(manifest)
+                            appendLog("Loaded bundled skill: \(manifest.name) (\(manifest.actions.count) actions)")
+                        }
+                    }
+                }
+            }
+        }
+
         // Load from SampleSkills folder reference (blue folder in Xcode)
         if let sampleSkillsURL = Bundle.main.url(forResource: "SampleSkills", withExtension: nil) {
             appendLog("Found SampleSkills folder in bundle")
@@ -651,9 +670,33 @@ final class AppState: ObservableObject {
         let baseRegistry = try CapabilityRegistry()
         let bootstrapSkillService = SkillRegistryService(capabilityRegistry: baseRegistry)
         let dynamicDefinitions = bootstrapSkillService.capabilityDefinitions(from: installedSkills.map(\.manifest))
-        // Create providers from compiled YAML manifests
+        // Build native executor registry for bundled skills
+        let nativeExecutors = NativeExecutorRegistry(executors: [
+            "apple_reminders": RemindersNativeExecutor(store: EventKitReminderStore()),
+            "apple_calendar": CalendarNativeExecutor(store: EventKitCalendarStore()),
+            "apple_notes": NotesNativeExecutor(clipboard: SystemClipboard(), urlHandler: urlHandler),
+            "apple_shortcuts": ShortcutsRunNativeExecutor(urlHandler: urlHandler),
+        ])
+
+        // Create providers from compiled YAML manifests — two-check gate
         let yamlProviders: [YAMLSkillProvider] = compiledManifests.map { manifest in
-            YAMLSkillProvider(manifest: manifest, urlHandler: urlHandler)
+            let executor: any SkillExecutor
+            if manifest.source == .bundle,
+               let native = nativeExecutors.executor(for: manifest.skillID) {
+                executor = native
+            } else {
+                let actionArguments = Dictionary(
+                    uniqueKeysWithValues: manifest.actions.compactMap { action in
+                        action.shortcutArguments.map { (action.id, $0) }
+                    }
+                )
+                executor = ShortcutsBridgeExecutor(
+                    bridgeShortcut: manifest.bridgeShortcut,
+                    actionArguments: actionArguments,
+                    urlHandler: urlHandler
+                )
+            }
+            return YAMLSkillProvider(manifest: manifest, executor: executor)
         }
 
         // Register capabilities from YAML providers (with per-action destructive flags)
@@ -670,10 +713,9 @@ final class AppState: ObservableObject {
             skillService.validate(manifest: skill.manifest).map(\.description)
         }
 
-        let systemProviders = SystemProviderFactory.defaultProviders(
-            urlHandler: urlHandler,
-            logSink: localLogSink
-        )
+        let systemProviders: [any DispatchProvider] = [
+            LocalLogProvider(sink: localLogSink),
+        ]
         let externalProviders = ExternalProviderFactory.providers(
             from: validSkills,
             urlHandler: urlHandler,
