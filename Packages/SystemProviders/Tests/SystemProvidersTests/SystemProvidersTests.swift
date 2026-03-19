@@ -160,3 +160,16 @@ private actor TestClipboard: ClipboardWriting {
     #expect(result.success)
     #expect(result.metadata["shortcut_name"] == .string("Morning Routine"))
 }
+
+// MARK: - NativeExecutorRegistry Tests
+
+@Test func nativeExecutorRegistryReturnsExecutorForBundledID() {
+    let executor = RemindersNativeExecutor(store: TestReminderStore())
+    let registry = NativeExecutorRegistry(executors: ["apple_reminders": executor])
+    #expect(registry.executor(for: "apple_reminders") != nil)
+}
+
+@Test func nativeExecutorRegistryReturnsNilForUnknownID() {
+    let registry = NativeExecutorRegistry(executors: [:])
+    #expect(registry.executor(for: "malicious_skill") == nil)
+}

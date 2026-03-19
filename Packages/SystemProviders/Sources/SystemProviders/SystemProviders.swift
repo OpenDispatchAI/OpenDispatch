@@ -460,6 +460,20 @@ public struct ShortcutsRunNativeExecutor: SkillExecutor {
     }
 }
 
+// MARK: - NativeExecutorRegistry
+
+public struct NativeExecutorRegistry: Sendable {
+    private let executors: [String: any SkillExecutor]
+
+    public init(executors: [String: any SkillExecutor]) {
+        self.executors = executors
+    }
+
+    public func executor(for skillID: String) -> (any SkillExecutor)? {
+        executors[skillID]
+    }
+}
+
 public enum SystemProviderFactory {
     public static func defaultProviders(
         urlHandler: any URLHandling,
