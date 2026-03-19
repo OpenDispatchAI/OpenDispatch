@@ -211,6 +211,17 @@ actions:
       - buy groceries tomorrow
 ```
 
+### Security Model
+
+Built-in skills use native code execution paths (EventKit, clipboard, URL schemes) instead of the Shortcuts bridge. A two-check security gate prevents user-imported skills from accessing native APIs:
+
+1. **Origin gate:** The manifest must be loaded from the app bundle (`BundledSkills/` directory), not from user-installed skill directories.
+2. **Executor gate:** The skill ID must be registered in the `NativeExecutorRegistry` at app startup.
+
+A user-imported skill declaring `built_in: true` or using a bundled skill ID will not receive native execution — it falls back to the Shortcuts bridge like any external skill.
+
+Multiple skills can declare the same capability (e.g., `task.create`). Routing is by embedding similarity — the capability is not a security boundary, the executor type is.
+
 ## Validation Rules
 
 The YAML parser enforces:
