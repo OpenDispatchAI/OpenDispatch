@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		607270E02F685C5D0031DAAF /* SkillCompiler in Frameworks */ = {isa = PBXBuildFile; productRef = 607270DF2F685C5D0031DAAF /* SkillCompiler */; };
-		60795F972F699AB4009F229C /* SampleSkills in Resources */ = {isa = PBXBuildFile; fileRef = 60795F962F699AB3009F229C /* SampleSkills */; };
 		60795FCA2F6AAA8B009F229C /* ParaphraseMultiMiniLM in Resources */ = {isa = PBXBuildFile; fileRef = 60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */; };
 		A1B2C3D4E5F6000000000001 /* CapabilityRegistry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000011 /* CapabilityRegistry */; };
 		A1B2C3D4E5F6000000000002 /* RouterCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000012 /* RouterCore */; };
@@ -46,7 +45,6 @@
 		606F02E92F66B5DF002CEC2D /* CapabilityRegistry */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = CapabilityRegistry; path = ../Packages/CapabilityRegistry; sourceTree = SOURCE_ROOT; };
 		606F02EA2F66B600002CEC2D /* Executors */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Executors; path = ../Packages/Executors; sourceTree = SOURCE_ROOT; };
 		607270E22F685CEF0031DAAF /* SkillCompiler */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = SkillCompiler; path = ../Packages/SkillCompiler; sourceTree = SOURCE_ROOT; };
-		60795F962F699AB3009F229C /* SampleSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SampleSkills; path = ../SampleSkills; sourceTree = SOURCE_ROOT; };
 		60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ParaphraseMultiMiniLM; path = ../ParaphraseMultiMiniLM; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000008 /* SystemProviders */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = SystemProviders; path = ../Packages/SystemProviders; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F6000000000009 /* ExternalProviders */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ExternalProviders; path = ../Packages/ExternalProviders; sourceTree = SOURCE_ROOT; };
@@ -107,7 +105,6 @@
 			isa = PBXGroup;
 			children = (
 				60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */,
-				60795F962F699AB3009F229C /* SampleSkills */,
 				A1B2C3D4E5F6000000000009 /* ExternalProviders */,
 				A1B2C3D4E5F6000000000008 /* SystemProviders */,
 				606F02EA2F66B600002CEC2D /* Executors */,
@@ -273,7 +270,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				60795FCA2F6AAA8B009F229C /* ParaphraseMultiMiniLM in Resources */,
-				60795F972F699AB4009F229C /* SampleSkills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
