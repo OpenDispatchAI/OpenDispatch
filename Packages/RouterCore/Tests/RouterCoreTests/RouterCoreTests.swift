@@ -199,6 +199,22 @@ private struct TestProvider: DispatchProvider {
     #expect(resolution.result.metadata["status"] == .string("awaiting_confirmation"))
 }
 
+private struct StubExecutor: SkillExecutor {
+    let result: ExecutionResult
+    func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        result
+    }
+}
+
+@Test("SkillExecutor protocol can be implemented")
+func skillExecutorProtocol() async {
+    let executor = StubExecutor(result: .success(metadata: ["status": .string("ok")]))
+    let plan = RouterPlan(capability: "test.action", parameters: [:], confidence: 1.0)
+    let result = await executor.execute(plan: plan, mode: .live)
+    #expect(result.success)
+    #expect(result.metadata["status"] == .string("ok"))
+}
+
 @Test func routerRejectsUnknownCapabilities() async throws {
     let router = Router(
         capabilityRegistry: try CapabilityRegistry(),

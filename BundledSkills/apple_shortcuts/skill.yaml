@@ -1,0 +1,18 @@
+skill_id: apple_shortcuts
+name: Apple Shortcuts
+version: 1.0.0
+built_in: true
+
+actions:
+  - id: shortcut.run
+    title: "Run Shortcut"
+    description: "Run an Apple Shortcut by name"
+    confirmation: required
+    parameters:
+      - name: name
+        type: string
+        required: true
+    examples:
+      - run my morning routine shortcut
+      - execute the backup shortcut
+      - run the shortcut called clean downloads

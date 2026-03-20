@@ -1,12 +1,12 @@
 import CapabilityRegistry
-import Executors
 import Foundation
 import RouterCore
 import SkillRegistry
 
 /// A DispatchProvider backed by a YAML skill manifest.
 /// Each YAML skill registers as a single provider with all its actions as capabilities.
-/// Execution goes through ShortcutsExecutor using the action's shortcut_arguments.
+/// Execution is delegated to an injected SkillExecutor, which handles bridge/shortcut
+/// invocation or native execution depending on the skill type.
 ///
 /// Confirmation behavior is per-action: each action in the YAML can specify
 /// `confirmation: required | none | destructive_only`. The provider uses
@@ -20,16 +20,16 @@ struct YAMLSkillProvider: DispatchProvider {
     let confirmationBehavior: ConfirmationBehavior = .destructiveOnly
 
     private let manifest: YAMLSkillManifest
-    private let shortcutsExecutor: ShortcutsExecutor
+    private let executor: any SkillExecutor
 
-    init(manifest: YAMLSkillManifest, urlHandler: any URLHandling) {
+    init(manifest: YAMLSkillManifest, executor: any SkillExecutor) {
         self.manifest = manifest
-        self.shortcutsExecutor = ShortcutsExecutor(urlHandler: urlHandler)
+        self.executor = executor
         self.descriptor = ProviderDescriptor(
             id: manifest.skillID,
             displayName: manifest.name,
-            kind: .external,
-            priority: 70,
+            kind: manifest.builtIn ? .system : .external,
+            priority: manifest.builtIn ? 90 : 70,
             capabilities: manifest.actions.map { CapabilityID(rawValue: $0.id) }
         )
     }
@@ -65,35 +65,9 @@ struct YAMLSkillProvider: DispatchProvider {
     }
 
     func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
-        guard let action = manifest.actions.first(where: { $0.id == plan.capability.rawValue }) else {
+        guard manifest.actions.contains(where: { $0.id == plan.capability.rawValue }) else {
             return .failure("No action found for \(plan.capability.rawValue)")
         }
-
-        // Per-action confirmation: if action says "none", skip confirmation
-        // even if the router asked for it. This is handled by the Router's
-        // requiresConfirmation check against destructiveByDefault.
-        // Actions with confirmation: required are marked destructiveByDefault=true,
-        // so the Router's destructiveOnly check will trigger confirmation.
-
-        guard let shortcutName = manifest.bridgeShortcut else {
-            return .failure("No bridge shortcut configured for \(manifest.name)")
-        }
-
-        // Build payload from shortcut_arguments, substituting any {{placeholder}} values
-        var payload = action.shortcutArguments ?? [:]
-        for (key, value) in payload {
-            if let template = value.stringValue, template.hasPrefix("{{"), template.hasSuffix("}}") {
-                let paramName = String(template.dropFirst(2).dropLast(2))
-                if let extracted = plan.parameters[paramName] {
-                    payload[key] = extracted
-                }
-            }
-        }
-
-        return await shortcutsExecutor.execute(
-            shortcutName: shortcutName,
-            parameters: payload,
-            mode: mode
-        )
+        return await executor.execute(plan: plan, mode: mode)
     }
 }

@@ -149,7 +149,7 @@ struct EndToEndRoutingTests {
     @Test("'unlock my tesla' routes to vehicle.unlock")
     func unlockTesla() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("unlock my tesla", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }
@@ -161,7 +161,7 @@ struct EndToEndRoutingTests {
     @Test("'add milk' routes to task.create")
     func addMilk() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("add milk", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }
@@ -173,7 +173,7 @@ struct EndToEndRoutingTests {
     @Test("'lock the car' routes to vehicle.lock not vehicle.unlock")
     func lockVsUnlock() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("lock the car", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }
@@ -184,7 +184,7 @@ struct EndToEndRoutingTests {
     @Test("'remind me to buy eggs' routes to task.create")
     func remindBuyEggs() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("remind me to buy eggs", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }
@@ -195,7 +195,7 @@ struct EndToEndRoutingTests {
     @Test("Top match for 'unlock my tesla' has high confidence")
     func highConfidence() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("unlock my tesla", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }
@@ -206,7 +206,7 @@ struct EndToEndRoutingTests {
     @Test("Returns multiple candidates with decreasing confidence")
     func multipleCandidates() async throws {
         let index = try await Self.compileTestIndex()
-        let service = EmbeddingService()
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
         guard let query = service.embed("open my car", language: "en") else {
             Issue.record("NLEmbedding unavailable"); return
         }

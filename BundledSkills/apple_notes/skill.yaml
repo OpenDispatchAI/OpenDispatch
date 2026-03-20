@@ -1,0 +1,20 @@
+skill_id: apple_notes
+name: Apple Notes
+version: 1.0.0
+built_in: true
+
+actions:
+  - id: note.create
+    title: "Create Note"
+    description: "Create a new note in Apple Notes"
+    confirmation: none
+    parameters:
+      - name: body
+        type: string
+        required: true
+    examples:
+      - write a note about the meeting
+      - save this to notes
+      - jot down my ideas
+      - make a note
+      - note to self

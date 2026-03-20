@@ -55,30 +55,13 @@ public struct LocalLogProvider: DispatchProvider {
     }
 }
 
-public struct RemindersProvider: DispatchProvider {
-    public let descriptor = ProviderDescriptor(
-        id: "apple_reminders",
-        displayName: "Apple Reminders",
-        kind: .system,
-        priority: 90,
-        capabilities: ["task.create", "task.complete"]
-    )
-    public let confirmationBehavior: ConfirmationBehavior = .destructiveOnly
+// MARK: - Native Executors
 
-    private let reminderStore: any ReminderStore
+public struct RemindersNativeExecutor: SkillExecutor {
+    private let store: any ReminderStore
 
-    public init(reminderStore: any ReminderStore) {
-        self.reminderStore = reminderStore
-    }
-
-    public func validate(plan: RouterPlan) throws {
-        if plan.parameters["title"]?.stringValue?.isEmpty != false {
-            throw RouterError.providerValidationFailed(descriptor.id)
-        }
-        if let dueDate = plan.parameters["due_date"]?.stringValue,
-           parseISO8601Date(dueDate) == nil {
-            throw RouterError.providerValidationFailed(descriptor.id)
-        }
+    public init(store: any ReminderStore) {
+        self.store = store
     }
 
     public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
@@ -99,7 +82,7 @@ public struct RemindersProvider: DispatchProvider {
         do {
             switch plan.capability.rawValue {
             case "task.create":
-                let identifier = try await reminderStore.createTask(
+                let identifier = try await store.createTask(
                     title: title,
                     notes: plan.parameters["notes"]?.stringValue,
                     dueDate: dueDate
@@ -113,7 +96,7 @@ public struct RemindersProvider: DispatchProvider {
                 }
                 return .success(metadata: metadata, toolCall: ToolCall(executorID: "eventkit_reminders", payload: plan.parameters))
             case "task.complete":
-                let completed = try await reminderStore.completeTask(title: title)
+                let completed = try await store.completeTask(title: title)
                 return completed
                     ? .success(
                         metadata: ["status": .string("completed")],
@@ -141,26 +124,11 @@ public struct RemindersProvider: DispatchProvider {
     }
 }
 
-public struct CalendarProvider: DispatchProvider {
-    public let descriptor = ProviderDescriptor(
-        id: "apple_calendar",
-        displayName: "Apple Calendar",
-        kind: .system,
-        priority: 80,
-        capabilities: ["calendar.event.create"]
-    )
-    public let confirmationBehavior: ConfirmationBehavior = .never
+public struct CalendarNativeExecutor: SkillExecutor {
+    private let store: any CalendarStore
 
-    private let calendarStore: any CalendarStore
-
-    public init(calendarStore: any CalendarStore) {
-        self.calendarStore = calendarStore
-    }
-
-    public func validate(plan: RouterPlan) throws {
-        if plan.parameters["title"]?.stringValue?.isEmpty != false {
-            throw RouterError.providerValidationFailed(descriptor.id)
-        }
+    public init(store: any CalendarStore) {
+        self.store = store
     }
 
     public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
@@ -179,7 +147,7 @@ public struct CalendarProvider: DispatchProvider {
         let end = plan.parameters["end_date"]?.stringValue.flatMap(formatter.date(from:))
 
         do {
-            let identifier = try await calendarStore.createEvent(
+            let identifier = try await store.createEvent(
                 title: plan.parameters["title"]?.stringValue ?? "",
                 start: start,
                 end: end,
@@ -198,62 +166,13 @@ public struct CalendarProvider: DispatchProvider {
     }
 }
 
-public struct ShortcutsProvider: DispatchProvider {
-    public let descriptor = ProviderDescriptor(
-        id: "apple_shortcuts",
-        displayName: "Apple Shortcuts",
-        kind: .system,
-        priority: 70,
-        capabilities: ["shortcut.run"]
-    )
-    public let confirmationBehavior: ConfirmationBehavior = .always
-
-    private let executor: ShortcutsExecutor
-
-    public init(urlHandler: any URLHandling) {
-        executor = ShortcutsExecutor(urlHandler: urlHandler)
-    }
-
-    public func validate(plan: RouterPlan) throws {
-        if plan.parameters["name"]?.stringValue?.isEmpty != false {
-            throw RouterError.providerValidationFailed(descriptor.id)
-        }
-    }
-
-    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
-        await executor.execute(
-            shortcutName: plan.parameters["name"]?.stringValue ?? "",
-            parameters: plan.parameters,
-            mode: mode
-        )
-    }
-}
-
-public struct NotesProvider: DispatchProvider {
-    public let descriptor = ProviderDescriptor(
-        id: "apple_notes",
-        displayName: "Apple Notes",
-        kind: .system,
-        priority: 60,
-        capabilities: ["note.create"]
-    )
-    public let confirmationBehavior: ConfirmationBehavior = .always
-
+public struct NotesNativeExecutor: SkillExecutor {
     private let clipboard: any ClipboardWriting
     private let urlHandler: any URLHandling
 
-    public init(
-        clipboard: any ClipboardWriting,
-        urlHandler: any URLHandling
-    ) {
+    public init(clipboard: any ClipboardWriting, urlHandler: any URLHandling) {
         self.clipboard = clipboard
         self.urlHandler = urlHandler
-    }
-
-    public func validate(plan: RouterPlan) throws {
-        if plan.parameters["body"]?.stringValue?.isEmpty != false {
-            throw RouterError.providerValidationFailed(descriptor.id)
-        }
     }
 
     public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
@@ -290,21 +209,41 @@ public struct NotesProvider: DispatchProvider {
     }
 }
 
+public struct ShortcutsRunNativeExecutor: SkillExecutor {
+    private let executor: ShortcutsExecutor
+
+    public init(urlHandler: any URLHandling) {
+        self.executor = ShortcutsExecutor(urlHandler: urlHandler)
+    }
+
+    public func execute(plan: RouterPlan, mode: ExecutionMode) async -> ExecutionResult {
+        await executor.execute(
+            shortcutName: plan.parameters["name"]?.stringValue ?? "",
+            parameters: plan.parameters,
+            mode: mode
+        )
+    }
+}
+
+// MARK: - NativeExecutorRegistry
+
+public struct NativeExecutorRegistry: Sendable {
+    private let executors: [String: any SkillExecutor]
+
+    public init(executors: [String: any SkillExecutor]) {
+        self.executors = executors
+    }
+
+    public func executor(for skillID: String) -> (any SkillExecutor)? {
+        executors[skillID]
+    }
+}
+
 public enum SystemProviderFactory {
     public static func defaultProviders(
-        urlHandler: any URLHandling,
-        logSink: any LocalLogSink,
-        clipboard: any ClipboardWriting = SystemClipboard(),
-        reminderStore: any ReminderStore = EventKitReminderStore(),
-        calendarStore: any CalendarStore = EventKitCalendarStore()
+        logSink: any LocalLogSink
     ) -> [any DispatchProvider] {
-        [
-            LocalLogProvider(sink: logSink),
-            RemindersProvider(reminderStore: reminderStore),
-            CalendarProvider(calendarStore: calendarStore),
-            NotesProvider(clipboard: clipboard, urlHandler: urlHandler),
-            ShortcutsProvider(urlHandler: urlHandler),
-        ]
+        [LocalLogProvider(sink: logSink)]
     }
 
     public static func register(
