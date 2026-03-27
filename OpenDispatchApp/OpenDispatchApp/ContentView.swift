@@ -768,6 +768,15 @@ private struct CompiledSkillDetailView: View {
                         }
                     }
 
+                    NavigationLink("Edit Custom Examples") {
+                        ExampleEditorView(
+                            skillID: manifest.skillID,
+                            actionID: action.id,
+                            skillName: manifest.name,
+                            actionTitle: action.title
+                        )
+                    }
+
                     // Show compiled embeddings grouped by language
                     if let index {
                         let actionEntries = index.entries.filter {
