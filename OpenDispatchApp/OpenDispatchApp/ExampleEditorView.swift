@@ -12,6 +12,7 @@ struct ExampleEditorView: View {
     @Query private var examples: [UserExampleRecord]
     @State private var newText = ""
     @State private var newIsNegative = false
+    @State private var duplicateWarning: String?
 
     init(skillID: String, actionID: String, skillName: String, actionTitle: String) {
         self.skillID = skillID
@@ -56,6 +57,12 @@ struct ExampleEditorView: View {
                 TextField("e.g., add milk to my shopping list", text: $newText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .onChange(of: newText) { _, _ in duplicateWarning = nil }
+                if let duplicateWarning {
+                    Label(duplicateWarning, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 Toggle("Negative example", isOn: $newIsNegative)
                 Button("Add") {
                     addExample()
@@ -70,8 +77,11 @@ struct ExampleEditorView: View {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return }
 
-        // Check for duplicates
-        guard examples.contains(where: { $0.text == trimmed }) == false else { return }
+        // Check for duplicates — search across all user examples, not just this action
+        if let existing = findDuplicate(text: trimmed) {
+            duplicateWarning = "This example already exists on \(existing.skillName) \u{2014} \(existing.actionTitle)"
+            return
+        }
 
         let record = UserExampleRecord(
             skillID: skillID,
@@ -85,7 +95,15 @@ struct ExampleEditorView: View {
         try? modelContext.save()
         newText = ""
         newIsNegative = false
+        duplicateWarning = nil
         appState.scheduleRecompile()
+    }
+
+    private func findDuplicate(text: String) -> UserExampleRecord? {
+        let descriptor = FetchDescriptor<UserExampleRecord>(
+            predicate: #Predicate { $0.text == text }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 
     private func deleteExamples(at offsets: IndexSet) {

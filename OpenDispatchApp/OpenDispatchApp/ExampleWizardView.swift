@@ -14,6 +14,7 @@ struct ExampleWizardView: View {
     @State private var selectedActionID: String?
     @State private var currentStep: WizardStep = .input
     @State private var savedCount = 0
+    @State private var duplicateWarning: String?
 
     enum WizardStep {
         case input
@@ -190,6 +191,13 @@ struct ExampleWizardView: View {
                 .font(.headline)
                 .padding(.top)
 
+            if let duplicateWarning {
+                Label(duplicateWarning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal)
+            }
+
             List(filteredActions) { item in
                 Button {
                     selectedSkillID = item.skillID
@@ -237,6 +245,7 @@ struct ExampleWizardView: View {
                 inputText = ""
                 selectedSkillID = nil
                 selectedActionID = nil
+                duplicateWarning = nil
                 currentStep = .input
                 savedCount += 1
             }
@@ -255,6 +264,12 @@ struct ExampleWizardView: View {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return }
 
+        // Check for duplicates across all user examples
+        if let existing = findDuplicate(text: trimmed) {
+            duplicateWarning = "This example already exists on \(existing.skillName) \u{2014} \(existing.actionTitle)"
+            return
+        }
+
         let record = UserExampleRecord(
             skillID: skillID,
             actionID: actionID,
@@ -264,7 +279,15 @@ struct ExampleWizardView: View {
         )
         modelContext.insert(record)
         try? modelContext.save()
+        duplicateWarning = nil
         appState.scheduleRecompile()
         currentStep = .saved
+    }
+
+    private func findDuplicate(text: String) -> UserExampleRecord? {
+        let descriptor = FetchDescriptor<UserExampleRecord>(
+            predicate: #Predicate { $0.text == text }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 }
