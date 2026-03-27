@@ -14,7 +14,6 @@ struct RuleBasedCapabilityClassifier {
             parameters: parameters(for: capability, rawInput: rawInput),
             confidence: 0.88,
             title: title(for: capability),
-            routing: routingHints(for: capability, normalizedInput: normalizedInput),
             suggestedProviderID: suggestedProviderID
         )
     }
@@ -38,8 +37,7 @@ struct RuleBasedCapabilityClassifier {
                 capability: "task.create",
                 parameters: ["title": .string(title)],
                 confidence: 0.92,
-                title: "Create Task",
-                routing: routingHints(for: "task.create", normalizedInput: normalizedInput)
+                title: "Create Task"
             )
         }
 
@@ -57,8 +55,7 @@ struct RuleBasedCapabilityClassifier {
                 capability: "task.complete",
                 parameters: ["title": .string(title)],
                 confidence: 0.9,
-                title: "Complete Task",
-                routing: routingHints(for: "task.complete", normalizedInput: normalizedInput)
+                title: "Complete Task"
             )
         }
 
@@ -175,40 +172,6 @@ struct RuleBasedCapabilityClassifier {
         default:
             "Log Event"
         }
-    }
-
-    private func routingHints(
-        for capability: CapabilityID,
-        normalizedInput: String
-    ) -> RoutingHints? {
-        guard capability == "task.create" || capability == "task.complete" else {
-            return nil
-        }
-
-        let groceryKeywords = [
-            "milk", "eggs", "bread", "groceries", "grocery", "shopping", "supermarket",
-            "cheese", "fruit", "vegetables", "banana", "bananas", "coffee",
-        ]
-        if groceryKeywords.contains(where: normalizedInput.contains) {
-            return RoutingHints(domain: "grocery", listHint: "groceries", audience: "shared")
-        }
-
-        let workKeywords = [
-            "work", "client", "meeting", "report", "deck", "invoice", "follow up", "email",
-            "slack", "jira", "roadmap",
-        ]
-        if workKeywords.contains(where: normalizedInput.contains) {
-            return RoutingHints(domain: "work", listHint: "work", audience: "personal")
-        }
-
-        let personalKeywords = [
-            "mom", "dad", "family", "doctor", "home", "personal", "gym",
-        ]
-        if personalKeywords.contains(where: normalizedInput.contains) {
-            return RoutingHints(domain: "personal", listHint: "personal", audience: "personal")
-        }
-
-        return nil
     }
 
     private func suffix(

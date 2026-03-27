@@ -226,6 +226,46 @@ private func makeEntry(
     #expect(decoded.entries[0].skillID == original.entries[0].skillID)
 }
 
+// MARK: - EntrySource Tests
+
+@Test("CompiledEntry source field round-trips through Codable")
+func compiledEntrySourceField() throws {
+    let entry = CompiledEntry(
+        embedding: [0.1, 0.2, 0.3],
+        skillID: "test",
+        skillName: "Test",
+        actionID: "test.action",
+        actionTitle: "Action",
+        capability: .init(rawValue: "test.action"),
+        parameters: nil,
+        shortcutArguments: nil,
+        originalExample: "test phrase",
+        language: "en",
+        isNegative: false,
+        source: .user
+    )
+    let data = try JSONEncoder().encode(entry)
+    let decoded = try JSONDecoder().decode(CompiledEntry.self, from: data)
+    #expect(decoded.source == .user)
+}
+
+@Test("CompiledEntry source defaults to .builtin")
+func compiledEntrySourceDefault() {
+    let entry = CompiledEntry(
+        embedding: [0.1, 0.2, 0.3],
+        skillID: "test",
+        skillName: "Test",
+        actionID: "test.action",
+        actionTitle: "Action",
+        capability: .init(rawValue: "test.action"),
+        parameters: nil,
+        shortcutArguments: nil,
+        originalExample: "test phrase",
+        language: "en"
+    )
+    #expect(entry.source == .builtin)
+}
+
 // MARK: - RouterPlan matchCandidates Tests
 
 @Test func routerPlanDefaultMatchCandidatesIsNil() {

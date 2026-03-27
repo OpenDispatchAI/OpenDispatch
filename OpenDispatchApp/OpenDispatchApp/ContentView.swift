@@ -7,6 +7,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var showExampleWizard = false
+
     var body: some View {
         TabView {
             HomeView()
@@ -25,6 +28,29 @@ struct ContentView: View {
                 .tabItem {
                     Label("Debug", systemImage: "ladybug")
                 }
+        }
+        .alert(
+            "Set Up Routing?",
+            isPresented: Binding(
+                get: { appState.wizardPromptSkill != nil },
+                set: { if !$0 { appState.wizardPromptSkill = nil } }
+            )
+        ) {
+            Button("Set Up Now") {
+                appState.wizardPromptSkill = nil
+                showExampleWizard = true
+            }
+            Button("Later", role: .cancel) {
+                appState.wizardPromptSkill = nil
+            }
+        } message: {
+            if let skill = appState.wizardPromptSkill {
+                let shared = appState.sharedCapabilities(for: skill)
+                Text("\(skill.name) can also handle \(shared.joined(separator: ", ")). Want to set up which commands go where?")
+            }
+        }
+        .sheet(isPresented: $showExampleWizard) {
+            ExampleWizardView()
         }
     }
 }
@@ -183,7 +209,7 @@ private struct HomeView: View {
                 }
             } message: {
                 if let choice = appState.pendingDestinationChoice {
-                    let label = choice.plan.routing?.domain ?? choice.plan.capability.rawValue
+                    let label = choice.plan.capability.rawValue
                     Text("Select where to send this \(label) action.")
                 }
             }
@@ -411,6 +437,28 @@ private struct SettingsView: View {
                     )
                 }
 
+                Section("Routing") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Routing Sensitivity")
+                            Spacer()
+                            Text(String(format: "%.2f", appState.confidenceGapThreshold))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(
+                            value: Binding(
+                                get: { appState.confidenceGapThreshold },
+                                set: { appState.updateConfidenceGapThreshold($0) }
+                            ),
+                            in: 0.01...0.30,
+                            step: 0.01
+                        )
+                        Text("Controls how confident OpenDispatch needs to be before automatically picking an action. A smaller value means more auto-dispatching, a larger value means more prompts to choose. If you\u{2019}re getting prompted too often, try adding custom examples first (Settings \u{2192} Teach OpenDispatch) \u{2014} this teaches the router your specific phrasing and is more targeted than changing this global setting.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Provider Preferences") {
                     ForEach(sortedCapabilities, id: \.self) { capability in
                         Picker(capability, selection: Binding(
@@ -425,19 +473,11 @@ private struct SettingsView: View {
                     }
                 }
 
-                if appState.destinationPreferenceKeys().isEmpty == false {
-                    Section("Destination Rules") {
-                        ForEach(appState.destinationPreferenceKeys(), id: \.self) { preferenceKey in
-                            Picker(appState.displayTitle(for: preferenceKey), selection: Binding(
-                                get: { appState.selectedProvider(for: preferenceKey) },
-                                set: { appState.setPreferredProvider($0, for: preferenceKey) }
-                            )) {
-                                Text("System Default").tag("")
-                                ForEach(appState.availableProviderOptions(for: preferenceKey)) { option in
-                                    Text(option.name).tag(option.id)
-                                }
-                            }
-                        }
+                Section("Custom Examples") {
+                    NavigationLink {
+                        ExampleWizardView()
+                    } label: {
+                        Label("Teach OpenDispatch", systemImage: "text.bubble")
                     }
                 }
             }
@@ -453,6 +493,8 @@ private struct DebugView: View {
         NavigationStack {
             List {
                 compiledIndexSection
+                userExamplesSection
+                orphanedExamplesSection
                 matchCandidatesSection
                 routerPlanSection
                 executionLogsSection
@@ -525,6 +567,88 @@ private struct DebugView: View {
                 }
             }
         }
+    }
+
+    // MARK: - User Examples
+
+    @ViewBuilder
+    private var userExamplesSection: some View {
+        if let index = appState.compiledIndex {
+            let userEntries = index.entries.filter { $0.source == .user }
+            if userEntries.isEmpty == false {
+                Section("User Examples in Index") {
+                    let grouped = Dictionary(grouping: userEntries) { "\($0.skillID)|\($0.actionID)" }
+                    ForEach(grouped.keys.sorted(), id: \.self) { key in
+                        let entries = grouped[key]!
+                        let first = entries.first!
+                        DisclosureGroup("\(first.skillName) — \(first.actionTitle) (\(entries.count))") {
+                            ForEach(entries, id: \.originalExample) { entry in
+                                HStack {
+                                    Text(entry.originalExample)
+                                        .font(.caption)
+                                    Spacer()
+                                    if entry.isNegative {
+                                        Text("NEG")
+                                            .font(.caption2)
+                                            .foregroundStyle(.red)
+                                    }
+                                    Text(entry.language)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Orphaned Examples
+
+    @ViewBuilder
+    private var orphanedExamplesSection: some View {
+        if appState.orphanedUserExamples.isEmpty == false {
+            Section("Orphaned User Examples") {
+                Label(
+                    "\(appState.orphanedUserExamples.count) examples reference removed skills",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
+
+                ForEach(appState.orphanedUserExamples, id: \.text) { orphan in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(orphan.text).font(.caption)
+                            Text("\(orphan.skillName) — \(orphan.actionTitle)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            deleteOrphan(orphan)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteOrphan(_ orphan: UserExample) {
+        let context = ModelContext(appState.modelContainer)
+        let sid = orphan.skillID
+        let aid = orphan.actionID
+        let txt = orphan.text
+        let descriptor = FetchDescriptor<UserExampleRecord>(
+            predicate: #Predicate { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
+        )
+        if let records = try? context.fetch(descriptor) {
+            for record in records { context.delete(record) }
+            try? context.save()
+        }
+        appState.orphanedUserExamples.removeAll { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
     }
 
     // MARK: - Match Candidates
@@ -766,6 +890,17 @@ private struct CompiledSkillDetailView: View {
                                 }
                             }
                         }
+                    }
+
+                    NavigationLink("Edit Examples") {
+                        ExampleEditorView(
+                            skillID: manifest.skillID,
+                            actionID: action.id,
+                            skillName: manifest.name,
+                            actionTitle: action.title,
+                            builtInExamples: action.examples,
+                            builtInNegativeExamples: action.negativeExamples
+                        )
                     }
 
                     // Show compiled embeddings grouped by language

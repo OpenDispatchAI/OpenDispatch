@@ -23,68 +23,6 @@ extension ModelBackendError: LocalizedError {
     }
 }
 
-public struct RuleBasedBackend: ModelBackend {
-    public let id = "rule_based"
-    private let classifier = RuleBasedCapabilityClassifier()
-
-    public init() {}
-
-    public func plan(
-        request: RouterRequest,
-        availableSkills: [PlannerSkillContext]
-    ) async throws -> RouterPlan {
-        let raw = request.rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = raw.lowercased()
-
-        if let skill = matchSkill(in: normalized, availableSkills: availableSkills) {
-            return classifier.planForMatchedSkill(
-                capability: skill.capability,
-                rawInput: raw,
-                normalizedInput: normalized,
-                suggestedProviderID: skill.providerID
-            )
-        }
-
-        if let plan = classifier.classify(rawInput: raw) {
-            return plan
-        }
-
-        return classifier.fallbackPlan(rawInput: raw)
-    }
-
-    private func matchSkill(
-        in normalizedInput: String,
-        availableSkills: [PlannerSkillContext]
-    ) -> PlannerSkillContext? {
-        availableSkills.max { lhs, rhs in
-            score(for: lhs, normalizedInput: normalizedInput) < score(for: rhs, normalizedInput: normalizedInput)
-        }.flatMap { candidate in
-            score(for: candidate, normalizedInput: normalizedInput) > 0 ? candidate : nil
-        }
-    }
-
-    private func score(
-        for skill: PlannerSkillContext,
-        normalizedInput: String
-    ) -> Int {
-        var total = 0
-        if normalizedInput.contains(skill.name.lowercased()) {
-            total += 5
-        }
-        if normalizedInput.contains(skill.providerID.lowercased()) {
-            total += 4
-        }
-        for keyword in skill.keywords where normalizedInput.contains(keyword.lowercased()) {
-            total += 3
-        }
-        for example in skill.examples where normalizedInput.contains(example.lowercased()) {
-            total += 2
-        }
-        return total
-    }
-
-}
-
 public struct AppleFoundationBackend: ModelBackend {
     public let id = "apple_foundation"
     private let builder = AppleFoundationPlanBuilder()

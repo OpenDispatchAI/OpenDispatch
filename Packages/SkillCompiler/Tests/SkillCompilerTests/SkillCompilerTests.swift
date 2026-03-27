@@ -219,6 +219,160 @@ struct EndToEndRoutingTests {
     }
 }
 
+// MARK: - User Example Merge Tests
+
+@Suite("User Example Merge")
+struct UserExampleMergeTests {
+
+    @Test("User examples are compiled alongside built-in examples")
+    func userExamplesCompiled() async throws {
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: service)
+
+        let manifest = YAMLSkillManifest(
+            skillID: "apple_reminders",
+            name: "Apple Reminders",
+            version: "1.0.0",
+            builtIn: true,
+            bridgeShortcut: nil,
+            bridgeShortcutShareURL: nil,
+            actions: [
+                YAMLSkillAction(
+                    id: "task.create",
+                    title: "Create Task",
+                    description: nil,
+                    shortcutArguments: nil,
+                    parameters: nil,
+                    examples: ["remind me to call mom"],
+                    negativeExamples: [],
+                    confirmation: nil
+                )
+            ],
+            source: .bundle
+        )
+
+        let userExamples: [UserExample] = [
+            UserExample(
+                skillID: "apple_reminders",
+                actionID: "task.create",
+                skillName: "Apple Reminders",
+                actionTitle: "Create Task",
+                text: "don't forget to water the plants",
+                isNegative: false
+            )
+        ]
+
+        let result = try await compiler.compile(
+            manifests: [manifest],
+            userExamples: userExamples
+        )
+
+        let userEntries = result.index.entries.filter { $0.source == .user }
+        let builtinEntries = result.index.entries.filter { $0.source == .builtin }
+
+        #expect(userEntries.count == 1)
+        #expect(userEntries.first?.originalExample == "don't forget to water the plants")
+        #expect(builtinEntries.isEmpty == false)
+    }
+
+    @Test("User negative examples are compiled with isNegative flag")
+    func userNegativeExamples() async throws {
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: service)
+
+        let manifest = YAMLSkillManifest(
+            skillID: "apple_reminders",
+            name: "Apple Reminders",
+            version: "1.0.0",
+            builtIn: true,
+            bridgeShortcut: nil,
+            bridgeShortcutShareURL: nil,
+            actions: [
+                YAMLSkillAction(
+                    id: "task.create",
+                    title: "Create Task",
+                    description: nil,
+                    shortcutArguments: nil,
+                    parameters: nil,
+                    examples: ["remind me to call mom"],
+                    negativeExamples: [],
+                    confirmation: nil
+                )
+            ],
+            source: .bundle
+        )
+
+        let userExamples: [UserExample] = [
+            UserExample(
+                skillID: "apple_reminders",
+                actionID: "task.create",
+                skillName: "Apple Reminders",
+                actionTitle: "Create Task",
+                text: "add to shopping list",
+                isNegative: true
+            )
+        ]
+
+        let result = try await compiler.compile(
+            manifests: [manifest],
+            userExamples: userExamples
+        )
+
+        let negatives = result.index.entries.filter { $0.isNegative && $0.source == .user }
+        #expect(negatives.count == 1)
+        #expect(negatives.first?.originalExample == "add to shopping list")
+    }
+
+    @Test("Orphaned user examples are skipped")
+    func orphanedExamplesSkipped() async throws {
+        let service = EmbeddingService(backend: NLEmbeddingBackend())
+        let compiler = SkillCompiler(languages: ["en"], embeddingService: service)
+
+        let manifest = YAMLSkillManifest(
+            skillID: "apple_reminders",
+            name: "Apple Reminders",
+            version: "1.0.0",
+            builtIn: true,
+            bridgeShortcut: nil,
+            bridgeShortcutShareURL: nil,
+            actions: [
+                YAMLSkillAction(
+                    id: "task.create",
+                    title: "Create Task",
+                    description: nil,
+                    shortcutArguments: nil,
+                    parameters: nil,
+                    examples: ["remind me to call mom"],
+                    negativeExamples: [],
+                    confirmation: nil
+                )
+            ],
+            source: .bundle
+        )
+
+        let userExamples: [UserExample] = [
+            UserExample(
+                skillID: "nonexistent_skill",
+                actionID: "task.create",
+                skillName: "Gone App",
+                actionTitle: "Create Task",
+                text: "orphaned example",
+                isNegative: false
+            )
+        ]
+
+        let result = try await compiler.compile(
+            manifests: [manifest],
+            userExamples: userExamples
+        )
+
+        let orphanedEntries = result.index.entries.filter { $0.skillID == "nonexistent_skill" }
+        #expect(orphanedEntries.isEmpty)
+        #expect(result.orphanedExamples.count == 1)
+        #expect(result.orphanedExamples.first?.skillID == "nonexistent_skill")
+    }
+}
+
 // MARK: - CompiledIndexStore Tests
 
 @Suite("CompiledIndexStore")

@@ -130,6 +130,65 @@ final class LocalLogRecord {
     }
 }
 
+@Model
+final class UserExampleRecord {
+    @Attribute(.unique) var id: UUID
+    var skillID: String
+    var actionID: String
+    var skillName: String
+    var actionTitle: String
+    var text: String
+    var createdAt: Date
+    var isNegative: Bool
+
+    /// Uniqueness: (skillID, actionID, text) — enforced at the UI/service layer
+    /// since SwiftData only supports single-attribute @Attribute(.unique).
+
+    var isValid: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    init(
+        id: UUID = UUID(),
+        skillID: String,
+        actionID: String,
+        skillName: String,
+        actionTitle: String,
+        text: String,
+        createdAt: Date = Date(),
+        isNegative: Bool = false
+    ) {
+        self.id = id
+        self.skillID = skillID
+        self.actionID = actionID
+        self.skillName = skillName
+        self.actionTitle = actionTitle
+        self.text = text
+        self.createdAt = createdAt
+        self.isNegative = isNegative
+    }
+}
+
+@Model
+final class SuppressedExampleRecord {
+    @Attribute(.unique) var id: UUID
+    var skillID: String
+    var actionID: String
+    var text: String
+
+    init(
+        id: UUID = UUID(),
+        skillID: String,
+        actionID: String,
+        text: String
+    ) {
+        self.id = id
+        self.skillID = skillID
+        self.actionID = actionID
+        self.text = text
+    }
+}
+
 enum JSONCodec {
     nonisolated static func encodeString<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()

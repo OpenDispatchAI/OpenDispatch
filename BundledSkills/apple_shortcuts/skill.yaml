@@ -16,3 +16,12 @@ actions:
       - run my morning routine shortcut
       - execute the backup shortcut
       - run the shortcut called clean downloads
+      - start the bedtime shortcut
+      - trigger my commute shortcut
+      - run automation for lights
+      - launch the workout shortcut
+      - execute my daily report shortcut
+    negative_examples:
+      - remind me to run the report
+      - schedule my morning routine
+      - make a note about the backup

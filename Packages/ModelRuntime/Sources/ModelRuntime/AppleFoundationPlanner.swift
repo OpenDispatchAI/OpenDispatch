@@ -18,9 +18,6 @@ struct PlannedCommandClassification: Sendable, Equatable {
     var eventTitle: String?
     var shortcutName: String?
     var url: String?
-    var routingDomain: String?
-    var routingListHint: String?
-    var routingAudience: String?
     var suggestedProviderID: String?
     var normalizedIntent: String?
     var tags: [String]
@@ -29,7 +26,7 @@ struct PlannedCommandClassification: Sendable, Equatable {
 private extension PlannedCommandClassification {
     var debugSummary: String {
         """
-        capability=\(capability), confidence=\(confidence), primaryText=\(primaryText ?? "nil"), taskTitle=\(taskTitle ?? "nil"), dueDate=\(dueDate ?? "nil"), noteTitle=\(noteTitle ?? "nil"), noteBody=\(noteBody ?? "nil"), eventTitle=\(eventTitle ?? "nil"), shortcutName=\(shortcutName ?? "nil"), url=\(url ?? "nil"), routingDomain=\(routingDomain ?? "nil"), routingListHint=\(routingListHint ?? "nil"), routingAudience=\(routingAudience ?? "nil"), suggestedProviderID=\(suggestedProviderID ?? "nil"), normalizedIntent=\(normalizedIntent ?? "nil"), tags=\(tags)
+        capability=\(capability), confidence=\(confidence), primaryText=\(primaryText ?? "nil"), taskTitle=\(taskTitle ?? "nil"), dueDate=\(dueDate ?? "nil"), noteTitle=\(noteTitle ?? "nil"), noteBody=\(noteBody ?? "nil"), eventTitle=\(eventTitle ?? "nil"), shortcutName=\(shortcutName ?? "nil"), url=\(url ?? "nil"), suggestedProviderID=\(suggestedProviderID ?? "nil"), normalizedIntent=\(normalizedIntent ?? "nil"), tags=\(tags)
         """
     }
 
@@ -55,9 +52,6 @@ private extension PlannedCommandClassification {
             eventTitle: eventTitle ?? self.eventTitle,
             shortcutName: shortcutName ?? self.shortcutName,
             url: url ?? self.url,
-            routingDomain: routingDomain,
-            routingListHint: routingListHint,
-            routingAudience: routingAudience,
             suggestedProviderID: suggestedProviderID,
             normalizedIntent: normalizedIntent ?? self.normalizedIntent,
             tags: tags ?? self.tags
@@ -78,9 +72,6 @@ private extension PlannedCommandClassification {
             eventTitle: try content.value(String?.self, forProperty: "eventTitle"),
             shortcutName: try content.value(String?.self, forProperty: "shortcutName"),
             url: try content.value(String?.self, forProperty: "url"),
-            routingDomain: try content.value(String?.self, forProperty: "routingDomain"),
-            routingListHint: try content.value(String?.self, forProperty: "routingListHint"),
-            routingAudience: try content.value(String?.self, forProperty: "routingAudience"),
             suggestedProviderID: try content.value(String?.self, forProperty: "suggestedProviderID"),
             normalizedIntent: try content.value(String?.self, forProperty: "normalizedIntent"),
             tags: try content.value([String].self, forProperty: "tags")
@@ -176,7 +167,6 @@ struct AppleFoundationPlanBuilder {
             parameters: parameters,
             confidence: clampedConfidence(classification.confidence),
             title: title(for: capability),
-            routing: routingHints(from: classification) ?? heuristicPlan?.routing,
             suggestedProviderID: suggestedProviderID ?? heuristicPlan?.suggestedProviderID
         ))
     }
@@ -276,16 +266,6 @@ struct AppleFoundationPlanBuilder {
         default:
             return "Capability \(capability.rawValue) did not produce a usable parameter set."
         }
-    }
-
-    private func routingHints(from classification: PlannedCommandClassification) -> RoutingHints? {
-        let domain = cleanedOptionalString(classification.routingDomain)
-        let listHint = cleanedOptionalString(classification.routingListHint)
-        let audience = cleanedOptionalString(classification.routingAudience)
-        guard domain != nil || listHint != nil || audience != nil else {
-            return nil
-        }
-        return RoutingHints(domain: domain, listHint: listHint, audience: audience)
     }
 
     private func validatedSuggestedProviderID(
@@ -399,21 +379,6 @@ private enum AppleFoundationSchemas {
                 .init(
                     name: "url",
                     description: "Absolute URL or resolvable host for url.open.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingDomain",
-                    description: "Routing domain like grocery, work, or personal when relevant.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingListHint",
-                    description: "Routing list hint like groceries, work, or personal when relevant.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingAudience",
-                    description: "Routing audience like shared or personal when relevant.",
                     type: String?.self
                 ),
                 .init(
@@ -870,11 +835,6 @@ enum AppleFoundationPlanner {
         - shortcut.run: run a shortcut
         - url.open: open a URL or deep link
 
-        Routing hints examples:
-        - grocery + groceries + shared for shopping items
-        - work + work + personal for work tasks
-        - personal + personal + personal for personal reminders
-
         \(skillBlock)
 
         User command:
@@ -883,12 +843,11 @@ enum AppleFoundationPlanner {
     }
 
     private static func skillDescription(_ skill: PlannerSkillContext) -> String {
-        let keywords = skill.keywords.joined(separator: ", ")
         let examples = skill.examples.joined(separator: ", ")
         let documentation = skill.documentation
             .replacingOccurrences(of: "\n", with: " | ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return "- name: \(skill.name); capability: \(skill.capability.rawValue); providerID: \(skill.providerID); keywords: [\(keywords)]; examples: [\(examples)]; documentation: \(documentation)"
+        return "- name: \(skill.name); capability: \(skill.capability.rawValue); providerID: \(skill.providerID); examples: [\(examples)]; documentation: \(documentation)"
     }
 
     private static func unavailableError(

@@ -27,6 +27,17 @@ actions:
       - create an event for lunch with Sarah
       - put a call on my calendar at 3pm
       - block off tomorrow morning
+      - schedule a workout for 7am
+      - add team standup to my calendar
+      - book the conference room for 2pm
+      - set up a meeting with the client on monday
+      - calendar event for dinner at 7
+      - add a birthday party on saturday
+      - put the deadline on my calendar
     negative_examples:
       - remind me about the meeting
       - remind me to go to the dentist
+      - remind me to call Sarah
+      - write a note about the meeting
+      - make a note about the deadline
+      - add dentist to my reminders

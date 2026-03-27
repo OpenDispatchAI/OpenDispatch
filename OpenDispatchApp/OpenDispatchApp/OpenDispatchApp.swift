@@ -12,6 +12,8 @@ struct OpenDispatchApp: App {
             InstalledSkillRecord.self,
             RepositorySourceRecord.self,
             LocalLogRecord.self,
+            UserExampleRecord.self,
+            SuppressedExampleRecord.self,
         ])
         let configuration = ModelConfiguration("OpenDispatch")
         let container: ModelContainer

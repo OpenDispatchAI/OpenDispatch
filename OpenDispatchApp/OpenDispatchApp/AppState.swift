@@ -18,7 +18,6 @@ struct ProviderOption: Identifiable, Hashable {
 }
 
 enum BackendSelection: String, CaseIterable, Identifiable {
-    case ruleBased = "rule_based"
     case appleFoundation = "apple_foundation"
     case embeddingRouter = "embedding_router"
 
@@ -26,8 +25,6 @@ enum BackendSelection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .ruleBased:
-            "Rule-Based"
         case .appleFoundation:
             "Apple Foundation"
         case .embeddingRouter:
@@ -83,10 +80,13 @@ final class AppState: ObservableObject {
     @Published var backendSelection: BackendSelection
     @Published var escalationEnabled: Bool
     @Published var dryRunEnabled: Bool
+    @Published var confidenceGapThreshold: Double
     @Published var compileStatus: CompileStatus = .notCompiled
     @Published var compiledManifests: [YAMLSkillManifest] = []
     @Published var lastMatchCandidates: [MatchCandidate] = []
     @Published var configuredLanguages: [String] = ["en"]
+    @Published var orphanedUserExamples: [UserExample] = []
+    @Published var wizardPromptSkill: YAMLSkillManifest?
 
     let modelContainer: ModelContainer
     private(set) var compiledIndex: CompiledIndex?
@@ -100,7 +100,7 @@ final class AppState: ObservableObject {
     private let legacyLaunchCommandKey = "OpenDispatch.Launch.Command"
     private let legacyLaunchCaptureKey = "OpenDispatch.Launch.Capture"
     private var hasBootstrapped = false
-    private var providerPreferences: [String: String]
+    @Published private var providerPreferences: [String: String]
 
     private static let defaultDispatchCommand = "Unlock my car"
 
@@ -112,10 +112,11 @@ final class AppState: ObservableObject {
         let stored = defaults.dictionary(forKey: settingsKey) ?? [:]
         let defaultBackend: BackendSelection = AppleFoundationBackend.isAvailableOnCurrentDevice
             ? .appleFoundation
-            : .ruleBased
+            : .embeddingRouter
         backendSelection = BackendSelection(rawValue: stored["backendSelection"] as? String ?? "") ?? defaultBackend
         escalationEnabled = stored["escalationEnabled"] as? Bool ?? false
         dryRunEnabled = stored["dryRunEnabled"] as? Bool ?? false
+        confidenceGapThreshold = stored["confidenceGapThreshold"] as? Double ?? 0.15
         providerPreferences = stored["providerPreferences"] as? [String: String] ?? [:]
         AppState.shared = self
     }
@@ -158,6 +159,7 @@ final class AppState: ObservableObject {
 
     func recompileSkillIndex() async {
         compileStatus = .compiling(progress: "Loading YAML skills...")
+        orphanedUserExamples = []
         appendLog("Starting skill compilation...")
 
         do {
@@ -180,7 +182,16 @@ final class AppState: ObservableObject {
             }
             let embeddingService = EmbeddingService(backend: backend)
             let compiler = SkillCompiler(languages: configuredLanguages, embeddingService: embeddingService)
-            let index = try await compiler.compile(manifests: manifests)
+            let userExamples = fetchUserExamples()
+            let suppressedExamples = fetchSuppressedExamples()
+            let result = try await compiler.compile(manifests: manifests, userExamples: userExamples, suppressedExamples: suppressedExamples)
+            let index = result.index
+
+            if result.orphanedExamples.isEmpty == false {
+                let orphanSkills = Set(result.orphanedExamples.map(\.skillID))
+                appendLog("Warning: \(result.orphanedExamples.count) user examples reference removed skills: \(orphanSkills.joined(separator: ", "))")
+                orphanedUserExamples = result.orphanedExamples
+            }
 
             try CompiledIndexStore.save(index, to: CompiledIndexStore.defaultURL())
             appendLog("Cached compiled index to disk")
@@ -202,6 +213,46 @@ final class AppState: ObservableObject {
         } catch {
             compileStatus = .failed(error.localizedDescription)
             appendLog("Compilation failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func fetchUserExamples() -> [UserExample] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<UserExampleRecord>()
+        guard let records = try? context.fetch(descriptor) else { return [] }
+        return records.map { record in
+            UserExample(
+                skillID: record.skillID,
+                actionID: record.actionID,
+                skillName: record.skillName,
+                actionTitle: record.actionTitle,
+                text: record.text,
+                isNegative: record.isNegative
+            )
+        }
+    }
+
+    private func fetchSuppressedExamples() -> [SuppressedExample] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<SuppressedExampleRecord>()
+        guard let records = try? context.fetch(descriptor) else { return [] }
+        return records.map { record in
+            SuppressedExample(
+                skillID: record.skillID,
+                actionID: record.actionID,
+                text: record.text
+            )
+        }
+    }
+
+    private var recompileTask: Task<Void, Never>?
+
+    func scheduleRecompile() {
+        recompileTask?.cancel()
+        recompileTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await recompileSkillIndex()
         }
     }
 
@@ -372,7 +423,6 @@ final class AppState: ObservableObject {
                 appendLog(executionLogMessage(for: resolution.result))
             }
 
-            learnPreferenceIfNeeded(providerID: option.providerID, for: pendingDestinationChoice.plan)
             self.pendingDestinationChoice = nil
         } catch {
             lastError = error.localizedDescription
@@ -470,33 +520,14 @@ final class AppState: ObservableObject {
         }
     }
 
+    func sharedCapabilities(for manifest: YAMLSkillManifest) -> [String] {
+        let newCapabilities = Set(manifest.actions.map(\.id))
+        let existingCapabilities = Set(compiledManifests.flatMap(\.actions).map(\.id))
+        return Array(newCapabilities.intersection(existingCapabilities))
+    }
+
     func selectedProvider(for capability: String) -> String {
         providerPreferences[capability] ?? ""
-    }
-
-    func destinationPreferenceKeys() -> [String] {
-        providerPreferences.keys
-            .filter { preferenceKey in
-                providerOptions.keys.contains { capability in
-                    preferenceKey.hasPrefix("\(capability).")
-                }
-            }
-            .sorted()
-    }
-
-    func displayTitle(for preferenceKey: String) -> String {
-        for capability in providerOptions.keys.sorted(by: { $0.count > $1.count }) where preferenceKey.hasPrefix("\(capability).") {
-            let suffix = preferenceKey.dropFirst(capability.count + 1)
-            return "\(capability) (\(suffix))"
-        }
-        return preferenceKey
-    }
-
-    func availableProviderOptions(for preferenceKey: String) -> [ProviderOption] {
-        for capability in providerOptions.keys.sorted(by: { $0.count > $1.count }) where preferenceKey.hasPrefix("\(capability).") {
-            return providerOptions[capability] ?? []
-        }
-        return []
     }
 
     func setPreferredProvider(_ providerID: String, for capability: String) {
@@ -520,6 +551,11 @@ final class AppState: ObservableObject {
 
     func updateDryRun(_ enabled: Bool) {
         dryRunEnabled = enabled
+        persistSettings()
+    }
+
+    func updateConfidenceGapThreshold(_ value: Double) {
+        confidenceGapThreshold = value
         persistSettings()
     }
 
@@ -651,18 +687,11 @@ final class AppState: ObservableObject {
                 "backendSelection": backendSelection.rawValue,
                 "escalationEnabled": escalationEnabled,
                 "dryRunEnabled": dryRunEnabled,
+                "confidenceGapThreshold": confidenceGapThreshold,
                 "providerPreferences": providerPreferences,
             ],
             forKey: settingsKey
         )
-    }
-
-    private func learnPreferenceIfNeeded(providerID: String, for plan: RouterPlan) {
-        guard let domain = plan.routing?.domain else {
-            return
-        }
-        providerPreferences["\(plan.capability.rawValue).\(domain)"] = providerID
-        persistSettings()
     }
 
     private func makeRuntime() async throws -> RuntimeSnapshot {
@@ -735,8 +764,6 @@ final class AppState: ObservableObject {
 
         let backend: any RouterPlanningBackend
         switch backendSelection {
-        case .ruleBased:
-            backend = RuleBasedBackend()
         case .appleFoundation:
             backend = AppleFoundationBackend()
         case .embeddingRouter:
@@ -746,8 +773,13 @@ final class AppState: ObservableObject {
                     embeddingService: EmbeddingService(backend: paraphrase)
                 )
             } else {
-                appendLog("No compiled index or embedding model available, falling back to rule-based")
-                backend = RuleBasedBackend()
+                compileStatus = .failed("No compiled index available. Please compile skills first.")
+                appendLog("No compiled index or embedding model available — compile skills to continue")
+                throw NSError(
+                    domain: "OpenDispatch",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "No compiled index available. Please compile skills first."]
+                )
             }
         }
 

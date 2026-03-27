@@ -24,9 +24,22 @@ actions:
       - remind me to pick up the kids at 3
       - new reminder buy groceries
       - remind me tomorrow to send the invoice
+      - don't let me forget to water the plants
+      - remind me to take out the trash tonight
+      - add a reminder to pay the bills
+      - remind me to check the mail
+      - I need to remember to buy a gift
+      - remind me to book a flight next week
+      - add pick up dry cleaning to my reminders
     negative_examples:
       - add milk to the shopping list
       - put it on my grocery list
+      - make a note about the meeting
+      - write down the address
+      - save this to notes
+      - jot down my ideas
+      - schedule a meeting tomorrow
+      - put a call on my calendar
 
   - id: task.complete
     title: "Complete Reminder"
@@ -41,3 +54,11 @@ actions:
       - complete the groceries reminder
       - I did the laundry
       - check off buy milk
+      - I finished the report
+      - done with the dishes
+      - mark pick up kids as complete
+      - I already sent the invoice
+    negative_examples:
+      - remind me to do the laundry
+      - add laundry to my list
+      - write a note about the report

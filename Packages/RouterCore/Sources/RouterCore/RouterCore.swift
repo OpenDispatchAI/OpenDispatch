@@ -98,7 +98,6 @@ public struct PlannerSkillContext: Hashable, Codable, Sendable {
     public let name: String
     public let capability: CapabilityID
     public let providerID: String
-    public let keywords: [String]
     public let examples: [String]
     public let documentation: String
 
@@ -107,7 +106,6 @@ public struct PlannerSkillContext: Hashable, Codable, Sendable {
         name: String,
         capability: CapabilityID,
         providerID: String,
-        keywords: [String] = [],
         examples: [String] = [],
         documentation: String = ""
     ) {
@@ -115,33 +113,8 @@ public struct PlannerSkillContext: Hashable, Codable, Sendable {
         self.name = name
         self.capability = capability
         self.providerID = providerID
-        self.keywords = keywords
         self.examples = examples
         self.documentation = documentation
-    }
-}
-
-public struct RoutingHints: Hashable, Codable, Sendable {
-    public let domain: String?
-    public let listHint: String?
-    public let audience: String?
-
-    public init(
-        domain: String? = nil,
-        listHint: String? = nil,
-        audience: String? = nil
-    ) {
-        self.domain = RoutingHints.normalized(domain)
-        self.listHint = RoutingHints.normalized(listHint)
-        self.audience = RoutingHints.normalized(audience)
-    }
-
-    private static func normalized(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              trimmed.isEmpty == false else {
-            return nil
-        }
-        return trimmed.lowercased()
     }
 }
 
@@ -196,6 +169,13 @@ public struct ParameterSchema: Hashable, Codable, Sendable {
     }
 }
 
+// MARK: - EntrySource
+
+public enum EntrySource: String, Hashable, Codable, Sendable {
+    case builtin
+    case user
+}
+
 // MARK: - CompiledEntry
 
 public struct CompiledEntry: Hashable, Codable, Sendable {
@@ -210,6 +190,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
     public let originalExample: String
     public let language: String
     public let isNegative: Bool
+    public let source: EntrySource
 
     public var requiresParameterExtraction: Bool {
         guard let parameters else { return false }
@@ -227,7 +208,8 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         shortcutArguments: [String: JSONValue]?,
         originalExample: String,
         language: String,
-        isNegative: Bool = false
+        isNegative: Bool = false,
+        source: EntrySource = .builtin
     ) {
         self.embedding = embedding
         self.skillID = skillID
@@ -240,6 +222,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         self.originalExample = originalExample
         self.language = language
         self.isNegative = isNegative
+        self.source = source
     }
 }
 
@@ -248,7 +231,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
 public struct CompiledIndex: Hashable, Codable, Sendable {
     /// Bump this when the index format changes. Cached indexes with a
     /// different version are discarded and recompiled automatically.
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 
     public let schemaVersion: Int
     public let entries: [CompiledEntry]
@@ -345,7 +328,6 @@ public struct RouterPlan: Hashable, Codable, Sendable {
     public let parameters: [String: JSONValue]
     public let confidence: Double
     public let title: String?
-    public let routing: RoutingHints?
     public let suggestedProviderID: String?
     public let matchCandidates: [MatchCandidate]?
 
@@ -354,7 +336,6 @@ public struct RouterPlan: Hashable, Codable, Sendable {
         parameters: [String: JSONValue],
         confidence: Double,
         title: String? = nil,
-        routing: RoutingHints? = nil,
         suggestedProviderID: String? = nil,
         matchCandidates: [MatchCandidate]? = nil
     ) {
@@ -362,7 +343,6 @@ public struct RouterPlan: Hashable, Codable, Sendable {
         self.parameters = parameters
         self.confidence = confidence
         self.title = title
-        self.routing = routing
         self.suggestedProviderID = suggestedProviderID
         self.matchCandidates = matchCandidates
     }
@@ -378,7 +358,6 @@ public struct RouterPlan: Hashable, Codable, Sendable {
             parameters: parameters,
             confidence: confidence,
             title: nil,
-            routing: nil,
             suggestedProviderID: suggestedProviderID,
             matchCandidates: nil
         )
@@ -492,29 +471,20 @@ public struct RoutingPolicy: Hashable, Codable, Sendable {
         self.preferredProviders = preferredProviders
     }
 
-    public func preferredProviderOrder(
-        for capability: CapabilityID,
-        routing: RoutingHints?
-    ) -> [String] {
-        var merged: [String] = []
-        for key in preferenceKeys(for: capability, routing: routing) {
-            for providerID in preferredProviders[key] ?? [] where merged.contains(providerID) == false {
-                merged.append(providerID)
+    public func preferredProviderOrder(for capability: CapabilityID) -> [String] {
+        var order: [String] = []
+        for key in preferenceKeys(for: capability) {
+            for providerID in preferredProviders[key] ?? [] {
+                if !order.contains(providerID) {
+                    order.append(providerID)
+                }
             }
         }
-        return merged
+        return order
     }
 
-    public func preferenceKeys(
-        for capability: CapabilityID,
-        routing: RoutingHints?
-    ) -> [String] {
-        var keys: [String] = []
-        if let domain = routing?.domain {
-            keys.append("\(capability.rawValue).\(domain)")
-        }
-        keys.append(capability.rawValue)
-        return keys
+    public func preferenceKeys(for capability: CapabilityID) -> [String] {
+        [capability.rawValue]
     }
 }
 
@@ -604,29 +574,28 @@ public struct DestinationResolver: Sendable {
     public func resolve(
         plan: RouterPlan,
         descriptors: [ProviderDescriptor],
-        policy: RoutingPolicy
+        policy: RoutingPolicy,
+        confidenceGapThreshold: Double = 0.15
     ) -> DestinationResolution {
         guard descriptors.isEmpty == false else {
             return .ambiguous([])
         }
 
-        let preferredOrder = policy.preferredProviderOrder(for: plan.capability, routing: plan.routing)
-        let heuristicOrder = heuristicProviderOrder(for: plan, descriptors: descriptors)
+        let preferredOrder = policy.preferredProviderOrder(for: plan.capability)
         let sortedDescriptors = descriptors.sorted {
             compare(
                 lhs: $0,
                 rhs: $1,
                 preferredOrder: preferredOrder,
-                heuristicOrder: heuristicOrder,
                 suggestedProviderID: plan.suggestedProviderID
             )
         }
 
         if shouldPromptForAmbiguity(
             plan: plan,
-            sortedDescriptors: sortedDescriptors,
-            preferredOrder: preferredOrder,
-            heuristicOrder: heuristicOrder
+            providers: sortedDescriptors,
+            confidenceGapThreshold: confidenceGapThreshold,
+            policy: policy
         ) {
             return .ambiguous(sortedDescriptors.map { descriptor in
                 DestinationOption(
@@ -635,7 +604,6 @@ public struct DestinationResolver: Sendable {
                     reason: reason(
                         for: descriptor,
                         preferredOrder: preferredOrder,
-                        heuristicOrder: heuristicOrder,
                         suggestedProviderID: plan.suggestedProviderID
                     )
                 )
@@ -650,25 +618,26 @@ public struct DestinationResolver: Sendable {
 
     private func shouldPromptForAmbiguity(
         plan: RouterPlan,
-        sortedDescriptors: [ProviderDescriptor],
-        preferredOrder: [String],
-        heuristicOrder: [String]
+        providers: [ProviderDescriptor],
+        confidenceGapThreshold: Double,
+        policy: RoutingPolicy
     ) -> Bool {
-        guard sortedDescriptors.count > 1 else {
+        guard providers.count > 1 else { return false }
+
+        if plan.suggestedProviderID != nil {
+            if let candidates = plan.matchCandidates, candidates.count >= 2 {
+                let gap = candidates[0].confidence - candidates[1].confidence
+                if gap >= confidenceGapThreshold {
+                    return false
+                }
+                return true
+            }
             return false
         }
-        guard plan.suggestedProviderID == nil else {
-            return false
-        }
-        guard preferredOrder.isEmpty else {
-            return false
-        }
-        guard heuristicOrder.isEmpty else {
-            return false
-        }
-        guard plan.routing?.domain != nil else {
-            return false
-        }
+
+        let preferred = policy.preferredProviderOrder(for: plan.capability)
+        if preferred.isEmpty == false { return false }
+
         return true
     }
 
@@ -676,7 +645,6 @@ public struct DestinationResolver: Sendable {
         lhs: ProviderDescriptor,
         rhs: ProviderDescriptor,
         preferredOrder: [String],
-        heuristicOrder: [String],
         suggestedProviderID: String?
     ) -> Bool {
         if lhs.id == suggestedProviderID {
@@ -692,11 +660,6 @@ public struct DestinationResolver: Sendable {
             return leftIndex < rightIndex
         }
 
-        let leftHeuristicIndex = heuristicOrder.firstIndex(of: lhs.id) ?? Int.max
-        let rightHeuristicIndex = heuristicOrder.firstIndex(of: rhs.id) ?? Int.max
-        if leftHeuristicIndex != rightHeuristicIndex {
-            return leftHeuristicIndex < rightHeuristicIndex
-        }
         if lhs.priority != rhs.priority {
             return lhs.priority > rhs.priority
         }
@@ -706,7 +669,6 @@ public struct DestinationResolver: Sendable {
     private func reason(
         for descriptor: ProviderDescriptor,
         preferredOrder: [String],
-        heuristicOrder: [String],
         suggestedProviderID: String?
     ) -> String? {
         if descriptor.id == suggestedProviderID {
@@ -715,58 +677,7 @@ public struct DestinationResolver: Sendable {
         if preferredOrder.first == descriptor.id {
             return "Matched saved preference"
         }
-        if heuristicOrder.first == descriptor.id {
-            return "Matched routing heuristic"
-        }
         return nil
-    }
-
-    private func heuristicProviderOrder(
-        for plan: RouterPlan,
-        descriptors: [ProviderDescriptor]
-    ) -> [String] {
-        guard let domain = plan.routing?.domain else {
-            return []
-        }
-
-        let preferredNeedles: [String]
-        switch domain {
-        case "grocery", "groceries":
-            preferredNeedles = ["ticktick", "grocer", "shopping"]
-        case "personal":
-            preferredNeedles = ["apple_reminders", "reminders"]
-        case "work":
-            preferredNeedles = ["apple_reminders", "reminders", "notion"]
-        default:
-            preferredNeedles = []
-        }
-
-        guard preferredNeedles.isEmpty == false else {
-            return []
-        }
-
-        let ranked = descriptors
-            .map { descriptor in
-                let haystack = "\(descriptor.id) \(descriptor.displayName)".lowercased()
-                let score = preferredNeedles.enumerated().reduce(into: 0) { partialResult, entry in
-                    if haystack.contains(entry.element) {
-                        partialResult += max(1, preferredNeedles.count - entry.offset)
-                    }
-                }
-                return (descriptor, score)
-            }
-            .filter { $0.1 > 0 }
-            .sorted { lhs, rhs in
-                if lhs.1 != rhs.1 {
-                    return lhs.1 > rhs.1
-                }
-                if lhs.0.priority != rhs.0.priority {
-                    return lhs.0.priority > rhs.0.priority
-                }
-                return lhs.0.displayName < rhs.0.displayName
-            }
-
-        return ranked.map(\.0.id)
     }
 }
 
@@ -902,7 +813,6 @@ public actor Router {
                     parameters: validatedEscalation.parameters,
                     confidence: validatedEscalation.confidence,
                     title: validatedEscalation.title,
-                    routing: validatedEscalation.routing,
                     suggestedProviderID: validatedEscalation.suggestedProviderID,
                     matchCandidates: validatedEscalation.matchCandidates ?? primaryCandidates
                 )
