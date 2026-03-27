@@ -2,6 +2,31 @@ import Foundation
 import RouterCore
 import SkillRegistry
 
+/// Lightweight representation of a user-added example, decoupled from SwiftData.
+public struct UserExample: Sendable {
+    public let skillID: String
+    public let actionID: String
+    public let skillName: String
+    public let actionTitle: String
+    public let text: String
+    public let isNegative: Bool
+
+    public init(skillID: String, actionID: String, skillName: String, actionTitle: String, text: String, isNegative: Bool) {
+        self.skillID = skillID
+        self.actionID = actionID
+        self.skillName = skillName
+        self.actionTitle = actionTitle
+        self.text = text
+        self.isNegative = isNegative
+    }
+}
+
+/// Result of compilation, including any orphaned user examples.
+public struct CompilationResult: Sendable {
+    public let index: CompiledIndex
+    public let orphanedExamples: [UserExample]
+}
+
 public enum SkillCompilerError: Error, Sendable {
     case noLanguagesConfigured
     case noSupportedLanguages([String])
@@ -22,27 +47,60 @@ public struct SkillCompiler: Sendable {
         self.translationService = translationService
     }
 
-    /// Compile one or more YAML skill manifests into a CompiledIndex.
-    /// Translates examples to configured languages if needed, then embeds all.
+    /// Backward-compatible overload — returns CompiledIndex directly.
     public func compile(manifests: [YAMLSkillManifest]) async throws -> CompiledIndex {
+        try await compile(manifests: manifests, userExamples: []).index
+    }
+
+    /// Compile one or more YAML skill manifests into a CompiledIndex,
+    /// merging user-provided examples alongside built-in ones.
+    /// User examples referencing unknown (skillID, actionID) pairs are returned as orphans.
+    public func compile(
+        manifests: [YAMLSkillManifest],
+        userExamples: [UserExample]
+    ) async throws -> CompilationResult {
         guard languages.isEmpty == false else {
             throw SkillCompilerError.noLanguagesConfigured
         }
 
+        let userExamplesByAction = Dictionary(
+            grouping: userExamples,
+            by: { "\($0.skillID)|\($0.actionID)" }
+        )
+
+        var validPairs = Set<String>()
         var entries: [CompiledEntry] = []
 
         for manifest in manifests {
             for action in manifest.actions {
+                let key = "\(manifest.skillID)|\(action.id)"
+                validPairs.insert(key)
+
                 let actionEntries = await compileAction(
                     action: action,
                     skillID: manifest.skillID,
                     skillName: manifest.name
                 )
                 entries.append(contentsOf: actionEntries)
+
+                if let extras = userExamplesByAction[key] {
+                    let userEntries = await compileUserExamples(
+                        extras,
+                        action: action,
+                        skillID: manifest.skillID,
+                        skillName: manifest.name
+                    )
+                    entries.append(contentsOf: userEntries)
+                }
             }
         }
 
-        return CompiledIndex(entries: entries)
+        let orphaned = userExamples.filter { !validPairs.contains("\($0.skillID)|\($0.actionID)") }
+
+        return CompilationResult(
+            index: CompiledIndex(entries: entries),
+            orphanedExamples: orphaned
+        )
     }
 
     private func compileAction(
@@ -140,6 +198,89 @@ public struct SkillCompiler: Sendable {
                     originalExample: text,
                     language: language,
                     isNegative: true
+                ))
+            }
+        }
+
+        return entries
+    }
+
+    private func compileUserExamples(
+        _ examples: [UserExample],
+        action: YAMLSkillAction,
+        skillID: String,
+        skillName: String
+    ) async -> [CompiledEntry] {
+        var entries: [CompiledEntry] = []
+
+        let userSampleText = examples.prefix(3).map(\.text).joined(separator: " ")
+        let sourceLanguage = translationService.detectLanguage(of: userSampleText) ?? "en"
+        let translationContext = [action.title, action.description]
+            .compactMap { $0 }
+            .joined(separator: " — ")
+
+        let positives = examples.filter { !$0.isNegative }
+        let negatives = examples.filter { $0.isNegative }
+
+        for language in languages {
+            var textsToEmbed: [String]
+            if language == sourceLanguage {
+                textsToEmbed = positives.map(\.text)
+            } else {
+                textsToEmbed = await translationService.translate(
+                    examples: positives.map(\.text),
+                    fromLanguage: sourceLanguage,
+                    toLanguage: language,
+                    context: translationContext
+                )
+            }
+
+            for text in textsToEmbed {
+                guard let vector = embeddingService.embed(text, language: language) else { continue }
+                entries.append(CompiledEntry(
+                    embedding: vector,
+                    skillID: skillID,
+                    skillName: skillName,
+                    actionID: action.id,
+                    actionTitle: action.title,
+                    capability: .init(rawValue: action.id),
+                    parameters: action.parameters,
+                    shortcutArguments: action.shortcutArguments,
+                    originalExample: text,
+                    language: language,
+                    source: .user
+                ))
+            }
+
+            var negTexts: [String]
+            if language == sourceLanguage {
+                negTexts = negatives.map(\.text)
+            } else if negatives.isEmpty == false {
+                negTexts = await translationService.translate(
+                    examples: negatives.map(\.text),
+                    fromLanguage: sourceLanguage,
+                    toLanguage: language,
+                    context: translationContext
+                )
+            } else {
+                negTexts = []
+            }
+
+            for text in negTexts {
+                guard let vector = embeddingService.embed(text, language: language) else { continue }
+                entries.append(CompiledEntry(
+                    embedding: vector,
+                    skillID: skillID,
+                    skillName: skillName,
+                    actionID: action.id,
+                    actionTitle: action.title,
+                    capability: .init(rawValue: action.id),
+                    parameters: action.parameters,
+                    shortcutArguments: action.shortcutArguments,
+                    originalExample: text,
+                    language: language,
+                    isNegative: true,
+                    source: .user
                 ))
             }
         }
