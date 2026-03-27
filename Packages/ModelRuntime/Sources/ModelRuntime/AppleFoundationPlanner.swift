@@ -176,7 +176,6 @@ struct AppleFoundationPlanBuilder {
             parameters: parameters,
             confidence: clampedConfidence(classification.confidence),
             title: title(for: capability),
-            routing: routingHints(from: classification) ?? heuristicPlan?.routing,
             suggestedProviderID: suggestedProviderID ?? heuristicPlan?.suggestedProviderID
         ))
     }
@@ -276,16 +275,6 @@ struct AppleFoundationPlanBuilder {
         default:
             return "Capability \(capability.rawValue) did not produce a usable parameter set."
         }
-    }
-
-    private func routingHints(from classification: PlannedCommandClassification) -> RoutingHints? {
-        let domain = cleanedOptionalString(classification.routingDomain)
-        let listHint = cleanedOptionalString(classification.routingListHint)
-        let audience = cleanedOptionalString(classification.routingAudience)
-        guard domain != nil || listHint != nil || audience != nil else {
-            return nil
-        }
-        return RoutingHints(domain: domain, listHint: listHint, audience: audience)
     }
 
     private func validatedSuggestedProviderID(
@@ -883,12 +872,11 @@ enum AppleFoundationPlanner {
     }
 
     private static func skillDescription(_ skill: PlannerSkillContext) -> String {
-        let keywords = skill.keywords.joined(separator: ", ")
         let examples = skill.examples.joined(separator: ", ")
         let documentation = skill.documentation
             .replacingOccurrences(of: "\n", with: " | ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return "- name: \(skill.name); capability: \(skill.capability.rawValue); providerID: \(skill.providerID); keywords: [\(keywords)]; examples: [\(examples)]; documentation: \(documentation)"
+        return "- name: \(skill.name); capability: \(skill.capability.rawValue); providerID: \(skill.providerID); examples: [\(examples)]; documentation: \(documentation)"
     }
 
     private static func unavailableError(
