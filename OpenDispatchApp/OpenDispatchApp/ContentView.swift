@@ -209,7 +209,7 @@ private struct HomeView: View {
                 }
             } message: {
                 if let choice = appState.pendingDestinationChoice {
-                    let label = choice.plan.routing?.domain ?? choice.plan.capability.rawValue
+                    let label = choice.plan.capability.rawValue
                     Text("Select where to send this \(label) action.")
                 }
             }
@@ -446,22 +446,6 @@ private struct SettingsView: View {
                             Text("System Default").tag("")
                             ForEach(appState.providerOptions[capability] ?? []) { option in
                                 Text(option.name).tag(option.id)
-                            }
-                        }
-                    }
-                }
-
-                if appState.destinationPreferenceKeys().isEmpty == false {
-                    Section("Destination Rules") {
-                        ForEach(appState.destinationPreferenceKeys(), id: \.self) { preferenceKey in
-                            Picker(appState.displayTitle(for: preferenceKey), selection: Binding(
-                                get: { appState.selectedProvider(for: preferenceKey) },
-                                set: { appState.setPreferredProvider($0, for: preferenceKey) }
-                            )) {
-                                Text("System Default").tag("")
-                                ForEach(appState.availableProviderOptions(for: preferenceKey)) { option in
-                                    Text(option.name).tag(option.id)
-                                }
                             }
                         }
                     }

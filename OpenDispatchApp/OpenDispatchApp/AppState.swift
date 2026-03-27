@@ -18,7 +18,6 @@ struct ProviderOption: Identifiable, Hashable {
 }
 
 enum BackendSelection: String, CaseIterable, Identifiable {
-    case ruleBased = "rule_based"
     case appleFoundation = "apple_foundation"
     case embeddingRouter = "embedding_router"
 
@@ -26,8 +25,6 @@ enum BackendSelection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .ruleBased:
-            "Rule-Based"
         case .appleFoundation:
             "Apple Foundation"
         case .embeddingRouter:
@@ -83,6 +80,7 @@ final class AppState: ObservableObject {
     @Published var backendSelection: BackendSelection
     @Published var escalationEnabled: Bool
     @Published var dryRunEnabled: Bool
+    @Published var confidenceGapThreshold: Double
     @Published var compileStatus: CompileStatus = .notCompiled
     @Published var compiledManifests: [YAMLSkillManifest] = []
     @Published var lastMatchCandidates: [MatchCandidate] = []
@@ -114,10 +112,11 @@ final class AppState: ObservableObject {
         let stored = defaults.dictionary(forKey: settingsKey) ?? [:]
         let defaultBackend: BackendSelection = AppleFoundationBackend.isAvailableOnCurrentDevice
             ? .appleFoundation
-            : .ruleBased
+            : .embeddingRouter
         backendSelection = BackendSelection(rawValue: stored["backendSelection"] as? String ?? "") ?? defaultBackend
         escalationEnabled = stored["escalationEnabled"] as? Bool ?? false
         dryRunEnabled = stored["dryRunEnabled"] as? Bool ?? false
+        confidenceGapThreshold = stored["confidenceGapThreshold"] as? Double ?? 0.15
         providerPreferences = stored["providerPreferences"] as? [String: String] ?? [:]
         AppState.shared = self
     }
@@ -410,7 +409,6 @@ final class AppState: ObservableObject {
                 appendLog(executionLogMessage(for: resolution.result))
             }
 
-            learnPreferenceIfNeeded(providerID: option.providerID, for: pendingDestinationChoice.plan)
             self.pendingDestinationChoice = nil
         } catch {
             lastError = error.localizedDescription
@@ -518,31 +516,6 @@ final class AppState: ObservableObject {
         providerPreferences[capability] ?? ""
     }
 
-    func destinationPreferenceKeys() -> [String] {
-        providerPreferences.keys
-            .filter { preferenceKey in
-                providerOptions.keys.contains { capability in
-                    preferenceKey.hasPrefix("\(capability).")
-                }
-            }
-            .sorted()
-    }
-
-    func displayTitle(for preferenceKey: String) -> String {
-        for capability in providerOptions.keys.sorted(by: { $0.count > $1.count }) where preferenceKey.hasPrefix("\(capability).") {
-            let suffix = preferenceKey.dropFirst(capability.count + 1)
-            return "\(capability) (\(suffix))"
-        }
-        return preferenceKey
-    }
-
-    func availableProviderOptions(for preferenceKey: String) -> [ProviderOption] {
-        for capability in providerOptions.keys.sorted(by: { $0.count > $1.count }) where preferenceKey.hasPrefix("\(capability).") {
-            return providerOptions[capability] ?? []
-        }
-        return []
-    }
-
     func setPreferredProvider(_ providerID: String, for capability: String) {
         if providerID.isEmpty {
             providerPreferences.removeValue(forKey: capability)
@@ -564,6 +537,11 @@ final class AppState: ObservableObject {
 
     func updateDryRun(_ enabled: Bool) {
         dryRunEnabled = enabled
+        persistSettings()
+    }
+
+    func updateConfidenceGapThreshold(_ value: Double) {
+        confidenceGapThreshold = value
         persistSettings()
     }
 
@@ -695,18 +673,11 @@ final class AppState: ObservableObject {
                 "backendSelection": backendSelection.rawValue,
                 "escalationEnabled": escalationEnabled,
                 "dryRunEnabled": dryRunEnabled,
+                "confidenceGapThreshold": confidenceGapThreshold,
                 "providerPreferences": providerPreferences,
             ],
             forKey: settingsKey
         )
-    }
-
-    private func learnPreferenceIfNeeded(providerID: String, for plan: RouterPlan) {
-        guard let domain = plan.routing?.domain else {
-            return
-        }
-        providerPreferences["\(plan.capability.rawValue).\(domain)"] = providerID
-        persistSettings()
     }
 
     private func makeRuntime() async throws -> RuntimeSnapshot {
@@ -779,8 +750,6 @@ final class AppState: ObservableObject {
 
         let backend: any RouterPlanningBackend
         switch backendSelection {
-        case .ruleBased:
-            backend = RuleBasedBackend()
         case .appleFoundation:
             backend = AppleFoundationBackend()
         case .embeddingRouter:
@@ -790,8 +759,13 @@ final class AppState: ObservableObject {
                     embeddingService: EmbeddingService(backend: paraphrase)
                 )
             } else {
-                appendLog("No compiled index or embedding model available, falling back to rule-based")
-                backend = RuleBasedBackend()
+                compileStatus = .failed("No compiled index available. Please compile skills first.")
+                appendLog("No compiled index or embedding model available — compile skills to continue")
+                throw NSError(
+                    domain: "OpenDispatch",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "No compiled index available. Please compile skills first."]
+                )
             }
         }
 
