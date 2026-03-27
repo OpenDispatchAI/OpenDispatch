@@ -196,6 +196,13 @@ public struct ParameterSchema: Hashable, Codable, Sendable {
     }
 }
 
+// MARK: - EntrySource
+
+public enum EntrySource: String, Hashable, Codable, Sendable {
+    case builtin
+    case user
+}
+
 // MARK: - CompiledEntry
 
 public struct CompiledEntry: Hashable, Codable, Sendable {
@@ -210,6 +217,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
     public let originalExample: String
     public let language: String
     public let isNegative: Bool
+    public let source: EntrySource
 
     public var requiresParameterExtraction: Bool {
         guard let parameters else { return false }
@@ -227,7 +235,8 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         shortcutArguments: [String: JSONValue]?,
         originalExample: String,
         language: String,
-        isNegative: Bool = false
+        isNegative: Bool = false,
+        source: EntrySource = .builtin
     ) {
         self.embedding = embedding
         self.skillID = skillID
@@ -240,6 +249,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
         self.originalExample = originalExample
         self.language = language
         self.isNegative = isNegative
+        self.source = source
     }
 }
 
@@ -248,7 +258,7 @@ public struct CompiledEntry: Hashable, Codable, Sendable {
 public struct CompiledIndex: Hashable, Codable, Sendable {
     /// Bump this when the index format changes. Cached indexes with a
     /// different version are discarded and recompiled automatically.
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 
     public let schemaVersion: Int
     public let entries: [CompiledEntry]
