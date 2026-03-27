@@ -18,3 +18,22 @@ actions:
       - jot down my ideas
       - make a note
       - note to self
+      - make a note to buy extra alcohol tomorrow
+      - note that the wifi password is 12345
+      - write down that the gate code is 4321
+      - save a note about the project deadline
+      - create a note with the recipe
+      - jot this down for later
+      - take a note about what they said
+      - note down the address
+      - write a quick note about the budget
+      - save these instructions to notes
+    negative_examples:
+      - remind me to buy alcohol
+      - remind me to call mom
+      - add milk to my list
+      - remind me tomorrow to send the invoice
+      - schedule a meeting tomorrow
+      - add dentist appointment on friday
+      - mark call mom as done
+      - complete the groceries reminder
