@@ -16,9 +16,6 @@ import Testing
             eventTitle: nil,
             shortcutName: nil,
             url: nil,
-            routingDomain: "personal",
-            routingListHint: "personal",
-            routingAudience: "personal",
             suggestedProviderID: nil,
             normalizedIntent: nil,
             tags: []
@@ -54,9 +51,6 @@ import Testing
             eventTitle: nil,
             shortcutName: nil,
             url: nil,
-            routingDomain: nil,
-            routingListHint: nil,
-            routingAudience: nil,
             suggestedProviderID: "ride_provider",
             normalizedIntent: nil,
             tags: []
@@ -84,9 +78,6 @@ import Testing
             eventTitle: nil,
             shortcutName: nil,
             url: nil,
-            routingDomain: nil,
-            routingListHint: nil,
-            routingAudience: nil,
             suggestedProviderID: nil,
             normalizedIntent: nil,
             tags: []
@@ -112,9 +103,6 @@ import Testing
             eventTitle: nil,
             shortcutName: nil,
             url: nil,
-            routingDomain: nil,
-            routingListHint: nil,
-            routingAudience: nil,
             suggestedProviderID: nil,
             normalizedIntent: nil,
             tags: []
@@ -140,9 +128,6 @@ import Testing
             eventTitle: nil,
             shortcutName: nil,
             url: nil,
-            routingDomain: nil,
-            routingListHint: nil,
-            routingAudience: nil,
             suggestedProviderID: nil,
             normalizedIntent: nil,
             tags: []

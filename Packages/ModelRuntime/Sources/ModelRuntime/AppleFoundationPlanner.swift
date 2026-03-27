@@ -18,9 +18,6 @@ struct PlannedCommandClassification: Sendable, Equatable {
     var eventTitle: String?
     var shortcutName: String?
     var url: String?
-    var routingDomain: String?
-    var routingListHint: String?
-    var routingAudience: String?
     var suggestedProviderID: String?
     var normalizedIntent: String?
     var tags: [String]
@@ -29,7 +26,7 @@ struct PlannedCommandClassification: Sendable, Equatable {
 private extension PlannedCommandClassification {
     var debugSummary: String {
         """
-        capability=\(capability), confidence=\(confidence), primaryText=\(primaryText ?? "nil"), taskTitle=\(taskTitle ?? "nil"), dueDate=\(dueDate ?? "nil"), noteTitle=\(noteTitle ?? "nil"), noteBody=\(noteBody ?? "nil"), eventTitle=\(eventTitle ?? "nil"), shortcutName=\(shortcutName ?? "nil"), url=\(url ?? "nil"), routingDomain=\(routingDomain ?? "nil"), routingListHint=\(routingListHint ?? "nil"), routingAudience=\(routingAudience ?? "nil"), suggestedProviderID=\(suggestedProviderID ?? "nil"), normalizedIntent=\(normalizedIntent ?? "nil"), tags=\(tags)
+        capability=\(capability), confidence=\(confidence), primaryText=\(primaryText ?? "nil"), taskTitle=\(taskTitle ?? "nil"), dueDate=\(dueDate ?? "nil"), noteTitle=\(noteTitle ?? "nil"), noteBody=\(noteBody ?? "nil"), eventTitle=\(eventTitle ?? "nil"), shortcutName=\(shortcutName ?? "nil"), url=\(url ?? "nil"), suggestedProviderID=\(suggestedProviderID ?? "nil"), normalizedIntent=\(normalizedIntent ?? "nil"), tags=\(tags)
         """
     }
 
@@ -55,9 +52,6 @@ private extension PlannedCommandClassification {
             eventTitle: eventTitle ?? self.eventTitle,
             shortcutName: shortcutName ?? self.shortcutName,
             url: url ?? self.url,
-            routingDomain: routingDomain,
-            routingListHint: routingListHint,
-            routingAudience: routingAudience,
             suggestedProviderID: suggestedProviderID,
             normalizedIntent: normalizedIntent ?? self.normalizedIntent,
             tags: tags ?? self.tags
@@ -78,9 +72,6 @@ private extension PlannedCommandClassification {
             eventTitle: try content.value(String?.self, forProperty: "eventTitle"),
             shortcutName: try content.value(String?.self, forProperty: "shortcutName"),
             url: try content.value(String?.self, forProperty: "url"),
-            routingDomain: try content.value(String?.self, forProperty: "routingDomain"),
-            routingListHint: try content.value(String?.self, forProperty: "routingListHint"),
-            routingAudience: try content.value(String?.self, forProperty: "routingAudience"),
             suggestedProviderID: try content.value(String?.self, forProperty: "suggestedProviderID"),
             normalizedIntent: try content.value(String?.self, forProperty: "normalizedIntent"),
             tags: try content.value([String].self, forProperty: "tags")
@@ -388,21 +379,6 @@ private enum AppleFoundationSchemas {
                 .init(
                     name: "url",
                     description: "Absolute URL or resolvable host for url.open.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingDomain",
-                    description: "Routing domain like grocery, work, or personal when relevant.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingListHint",
-                    description: "Routing list hint like groceries, work, or personal when relevant.",
-                    type: String?.self
-                ),
-                .init(
-                    name: "routingAudience",
-                    description: "Routing audience like shared or personal when relevant.",
                     type: String?.self
                 ),
                 .init(
@@ -858,11 +834,6 @@ enum AppleFoundationPlanner {
         - calendar.event.create: create a calendar event
         - shortcut.run: run a shortcut
         - url.open: open a URL or deep link
-
-        Routing hints examples:
-        - grocery + groceries + shared for shopping items
-        - work + work + personal for work tasks
-        - personal + personal + personal for personal reminders
 
         \(skillBlock)
 
