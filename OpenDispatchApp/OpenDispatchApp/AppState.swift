@@ -87,6 +87,7 @@ final class AppState: ObservableObject {
     @Published var compiledManifests: [YAMLSkillManifest] = []
     @Published var lastMatchCandidates: [MatchCandidate] = []
     @Published var configuredLanguages: [String] = ["en"]
+    @Published var orphanedUserExamples: [UserExample] = []
 
     let modelContainer: ModelContainer
     private(set) var compiledIndex: CompiledIndex?
@@ -158,6 +159,7 @@ final class AppState: ObservableObject {
 
     func recompileSkillIndex() async {
         compileStatus = .compiling(progress: "Loading YAML skills...")
+        orphanedUserExamples = []
         appendLog("Starting skill compilation...")
 
         do {
@@ -180,7 +182,15 @@ final class AppState: ObservableObject {
             }
             let embeddingService = EmbeddingService(backend: backend)
             let compiler = SkillCompiler(languages: configuredLanguages, embeddingService: embeddingService)
-            let index = try await compiler.compile(manifests: manifests)
+            let userExamples = fetchUserExamples()
+            let result = try await compiler.compile(manifests: manifests, userExamples: userExamples)
+            let index = result.index
+
+            if result.orphanedExamples.isEmpty == false {
+                let orphanSkills = Set(result.orphanedExamples.map(\.skillID))
+                appendLog("Warning: \(result.orphanedExamples.count) user examples reference removed skills: \(orphanSkills.joined(separator: ", "))")
+                orphanedUserExamples = result.orphanedExamples
+            }
 
             try CompiledIndexStore.save(index, to: CompiledIndexStore.defaultURL())
             appendLog("Cached compiled index to disk")
@@ -202,6 +212,33 @@ final class AppState: ObservableObject {
         } catch {
             compileStatus = .failed(error.localizedDescription)
             appendLog("Compilation failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func fetchUserExamples() -> [UserExample] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<UserExampleRecord>()
+        guard let records = try? context.fetch(descriptor) else { return [] }
+        return records.map { record in
+            UserExample(
+                skillID: record.skillID,
+                actionID: record.actionID,
+                skillName: record.skillName,
+                actionTitle: record.actionTitle,
+                text: record.text,
+                isNegative: record.isNegative
+            )
+        }
+    }
+
+    private var recompileTask: Task<Void, Never>?
+
+    func scheduleRecompile() {
+        recompileTask?.cancel()
+        recompileTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await recompileSkillIndex()
         }
     }
 
