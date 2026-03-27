@@ -143,6 +143,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 606F02DB2F66AE1C002CEC2D /* Build configuration list for PBXNativeTarget "OpenDispatch" */;
 			buildPhases = (
+				60184FC62F770CAF009F364D /* ShellScript */,
 				606F02B12F66AE1B002CEC2D /* Sources */,
 				606F02B22F66AE1B002CEC2D /* Frameworks */,
 				606F02B32F66AE1B002CEC2D /* Resources */,
@@ -296,6 +297,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		60184FC62F770CAF009F364D /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "WEIGHT_FILE=\"${SRCROOT}/../ParaphraseMultiMiniLM/ParaphraseMultiMiniLM.mlpackage/Data/com.apple.CoreML/weights/weight.bin\"\n\nif [ -f \"$WEIGHT_FILE\" ]; then\n    HEADER=$(head -c 40 \"$WEIGHT_FILE\")\n    if echo \"$HEADER\" | grep -q \"git-lfs\"; then\n        echo \"error: weight.bin is a Git LFS pointer, not the actual model. Run 'git lfs pull' in the repo root.\"\n        exit 1\n    fi\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		606F02B12F66AE1B002CEC2D /* Sources */ = {
