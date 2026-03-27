@@ -437,6 +437,28 @@ private struct SettingsView: View {
                     )
                 }
 
+                Section("Routing") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Routing Sensitivity")
+                            Spacer()
+                            Text(String(format: "%.2f", appState.confidenceGapThreshold))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(
+                            value: Binding(
+                                get: { appState.confidenceGapThreshold },
+                                set: { appState.updateConfidenceGapThreshold($0) }
+                            ),
+                            in: 0.01...0.30,
+                            step: 0.01
+                        )
+                        Text("Controls how confident OpenDispatch needs to be before automatically picking an action. A smaller value means more auto-dispatching, a larger value means more prompts to choose. If you\u{2019}re getting prompted too often, try adding custom examples first (Settings \u{2192} Teach OpenDispatch) \u{2014} this teaches the router your specific phrasing and is more targeted than changing this global setting.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Provider Preferences") {
                     ForEach(sortedCapabilities, id: \.self) { capability in
                         Picker(capability, selection: Binding(
