@@ -20,20 +20,6 @@
 		A1B2C3D4E5F6000000000007 /* ExternalProviders in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000017 /* ExternalProviders */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildRule section */
-		60184FA22F770084009F364D /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.mlpackage;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# coremlc\n";
-		};
-/* End PBXBuildRule section */
-
 /* Begin PBXContainerItemProxy section */
 		606F02C82F66AE1C002CEC2D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -162,7 +148,6 @@
 				606F02B32F66AE1B002CEC2D /* Resources */,
 			);
 			buildRules = (
-				60184FA22F770084009F364D /* PBXBuildRule */,
 			);
 			dependencies = (
 			);

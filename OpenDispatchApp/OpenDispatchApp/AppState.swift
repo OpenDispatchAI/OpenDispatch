@@ -100,7 +100,7 @@ final class AppState: ObservableObject {
     private let legacyLaunchCommandKey = "OpenDispatch.Launch.Command"
     private let legacyLaunchCaptureKey = "OpenDispatch.Launch.Capture"
     private var hasBootstrapped = false
-    private var providerPreferences: [String: String]
+    @Published private var providerPreferences: [String: String]
 
     private static let defaultDispatchCommand = "Unlock my car"
 
