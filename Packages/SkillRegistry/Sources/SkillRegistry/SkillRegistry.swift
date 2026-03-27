@@ -787,7 +787,6 @@ public struct SkillRegistryService: Sendable {
                     name: skill.manifest.displayName,
                     capability: action.capability,
                     providerID: skill.manifest.resolvedProviderID,
-                    keywords: action.keywords,
                     examples: action.examples,
                     documentation: planningDocumentation(for: action, in: skill)
                 )
