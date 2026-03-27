@@ -440,6 +440,14 @@ private struct SettingsView: View {
                         }
                     }
                 }
+
+                Section("Custom Examples") {
+                    NavigationLink {
+                        ExampleWizardView()
+                    } label: {
+                        Label("Teach OpenDispatch", systemImage: "text.bubble")
+                    }
+                }
             }
             .navigationTitle("Settings")
         }
