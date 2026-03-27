@@ -461,6 +461,8 @@ private struct DebugView: View {
         NavigationStack {
             List {
                 compiledIndexSection
+                userExamplesSection
+                orphanedExamplesSection
                 matchCandidatesSection
                 routerPlanSection
                 executionLogsSection
@@ -533,6 +535,88 @@ private struct DebugView: View {
                 }
             }
         }
+    }
+
+    // MARK: - User Examples
+
+    @ViewBuilder
+    private var userExamplesSection: some View {
+        if let index = appState.compiledIndex {
+            let userEntries = index.entries.filter { $0.source == .user }
+            if userEntries.isEmpty == false {
+                Section("User Examples in Index") {
+                    let grouped = Dictionary(grouping: userEntries) { "\($0.skillID)|\($0.actionID)" }
+                    ForEach(grouped.keys.sorted(), id: \.self) { key in
+                        let entries = grouped[key]!
+                        let first = entries.first!
+                        DisclosureGroup("\(first.skillName) — \(first.actionTitle) (\(entries.count))") {
+                            ForEach(entries, id: \.originalExample) { entry in
+                                HStack {
+                                    Text(entry.originalExample)
+                                        .font(.caption)
+                                    Spacer()
+                                    if entry.isNegative {
+                                        Text("NEG")
+                                            .font(.caption2)
+                                            .foregroundStyle(.red)
+                                    }
+                                    Text(entry.language)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Orphaned Examples
+
+    @ViewBuilder
+    private var orphanedExamplesSection: some View {
+        if appState.orphanedUserExamples.isEmpty == false {
+            Section("Orphaned User Examples") {
+                Label(
+                    "\(appState.orphanedUserExamples.count) examples reference removed skills",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
+
+                ForEach(appState.orphanedUserExamples, id: \.text) { orphan in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(orphan.text).font(.caption)
+                            Text("\(orphan.skillName) — \(orphan.actionTitle)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            deleteOrphan(orphan)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteOrphan(_ orphan: UserExample) {
+        let context = ModelContext(appState.modelContainer)
+        let sid = orphan.skillID
+        let aid = orphan.actionID
+        let txt = orphan.text
+        let descriptor = FetchDescriptor<UserExampleRecord>(
+            predicate: #Predicate { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
+        )
+        if let records = try? context.fetch(descriptor) {
+            for record in records { context.delete(record) }
+            try? context.save()
+        }
+        appState.orphanedUserExamples.removeAll { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
     }
 
     // MARK: - Match Candidates
