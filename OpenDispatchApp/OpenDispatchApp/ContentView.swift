@@ -892,12 +892,14 @@ private struct CompiledSkillDetailView: View {
                         }
                     }
 
-                    NavigationLink("Edit Custom Examples") {
+                    NavigationLink("Edit Examples") {
                         ExampleEditorView(
                             skillID: manifest.skillID,
                             actionID: action.id,
                             skillName: manifest.name,
-                            actionTitle: action.title
+                            actionTitle: action.title,
+                            builtInExamples: action.examples,
+                            builtInNegativeExamples: action.negativeExamples
                         )
                     }
 

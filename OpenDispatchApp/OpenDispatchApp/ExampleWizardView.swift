@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 import RouterCore
 import SkillCompiler
+import SkillRegistry
 
 struct ExampleWizardView: View {
     @EnvironmentObject private var appState: AppState

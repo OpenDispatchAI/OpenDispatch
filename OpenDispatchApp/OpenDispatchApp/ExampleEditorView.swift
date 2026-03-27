@@ -6,38 +6,94 @@ struct ExampleEditorView: View {
     let actionID: String
     let skillName: String
     let actionTitle: String
+    let builtInExamples: [String]
+    let builtInNegativeExamples: [String]
 
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appState: AppState
-    @Query private var examples: [UserExampleRecord]
+    @Query private var userExamples: [UserExampleRecord]
+    @Query private var suppressedExamples: [SuppressedExampleRecord]
     @State private var newText = ""
     @State private var newIsNegative = false
     @State private var duplicateWarning: String?
 
-    init(skillID: String, actionID: String, skillName: String, actionTitle: String) {
+    init(
+        skillID: String,
+        actionID: String,
+        skillName: String,
+        actionTitle: String,
+        builtInExamples: [String] = [],
+        builtInNegativeExamples: [String] = []
+    ) {
         self.skillID = skillID
         self.actionID = actionID
         self.skillName = skillName
         self.actionTitle = actionTitle
+        self.builtInExamples = builtInExamples
+        self.builtInNegativeExamples = builtInNegativeExamples
 
         let sid = skillID
         let aid = actionID
-        _examples = Query(
+        _userExamples = Query(
             filter: #Predicate<UserExampleRecord> {
                 $0.skillID == sid && $0.actionID == aid
             },
             sort: \.createdAt
         )
+        _suppressedExamples = Query(
+            filter: #Predicate<SuppressedExampleRecord> {
+                $0.skillID == sid && $0.actionID == aid
+            }
+        )
+    }
+
+    private func isSuppressed(_ text: String) -> Bool {
+        suppressedExamples.contains { $0.text == text }
     }
 
     var body: some View {
         List {
+            Section("Built-in Examples") {
+                ForEach(builtInExamples, id: \.self) { example in
+                    Toggle(example, isOn: Binding(
+                        get: { !isSuppressed(example) },
+                        set: { enabled in
+                            if enabled {
+                                unsuppress(example)
+                            } else {
+                                suppress(example)
+                            }
+                        }
+                    ))
+                    .font(.body)
+                }
+                if builtInNegativeExamples.isEmpty == false {
+                    ForEach(builtInNegativeExamples, id: \.self) { example in
+                        HStack {
+                            Toggle(example, isOn: Binding(
+                                get: { !isSuppressed(example) },
+                                set: { enabled in
+                                    if enabled {
+                                        unsuppress(example)
+                                    } else {
+                                        suppress(example)
+                                    }
+                                }
+                            ))
+                            Text("NEG")
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+
             Section("Your Examples") {
-                if examples.isEmpty {
+                if userExamples.isEmpty {
                     Text("No custom examples yet")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(examples) { example in
+                ForEach(userExamples) { example in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(example.text)
@@ -70,14 +126,36 @@ struct ExampleEditorView: View {
                 .disabled(newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .navigationTitle("\(skillName) — \(actionTitle)")
+        .navigationTitle("\(skillName) \u{2014} \(actionTitle)")
     }
+
+    // MARK: - Suppression
+
+    private func suppress(_ text: String) {
+        let record = SuppressedExampleRecord(
+            skillID: skillID,
+            actionID: actionID,
+            text: text
+        )
+        modelContext.insert(record)
+        try? modelContext.save()
+        appState.scheduleRecompile()
+    }
+
+    private func unsuppress(_ text: String) {
+        if let record = suppressedExamples.first(where: { $0.text == text }) {
+            modelContext.delete(record)
+            try? modelContext.save()
+            appState.scheduleRecompile()
+        }
+    }
+
+    // MARK: - User Examples
 
     private func addExample() {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return }
 
-        // Check for duplicates — search across all user examples, not just this action
         if let existing = findDuplicate(text: trimmed) {
             duplicateWarning = "This example already exists on \(existing.skillName) \u{2014} \(existing.actionTitle)"
             return
@@ -108,7 +186,7 @@ struct ExampleEditorView: View {
 
     private func deleteExamples(at offsets: IndexSet) {
         for index in offsets {
-            modelContext.delete(examples[index])
+            modelContext.delete(userExamples[index])
         }
         try? modelContext.save()
         appState.scheduleRecompile()

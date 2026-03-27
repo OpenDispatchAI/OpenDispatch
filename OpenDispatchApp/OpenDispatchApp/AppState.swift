@@ -183,7 +183,8 @@ final class AppState: ObservableObject {
             let embeddingService = EmbeddingService(backend: backend)
             let compiler = SkillCompiler(languages: configuredLanguages, embeddingService: embeddingService)
             let userExamples = fetchUserExamples()
-            let result = try await compiler.compile(manifests: manifests, userExamples: userExamples)
+            let suppressedExamples = fetchSuppressedExamples()
+            let result = try await compiler.compile(manifests: manifests, userExamples: userExamples, suppressedExamples: suppressedExamples)
             let index = result.index
 
             if result.orphanedExamples.isEmpty == false {
@@ -227,6 +228,19 @@ final class AppState: ObservableObject {
                 actionTitle: record.actionTitle,
                 text: record.text,
                 isNegative: record.isNegative
+            )
+        }
+    }
+
+    private func fetchSuppressedExamples() -> [SuppressedExample] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<SuppressedExampleRecord>()
+        guard let records = try? context.fetch(descriptor) else { return [] }
+        return records.map { record in
+            SuppressedExample(
+                skillID: record.skillID,
+                actionID: record.actionID,
+                text: record.text
             )
         }
     }

@@ -21,6 +21,19 @@ public struct UserExample: Sendable {
     }
 }
 
+/// A built-in example suppressed by the user — skipped during compilation.
+public struct SuppressedExample: Sendable {
+    public let skillID: String
+    public let actionID: String
+    public let text: String
+
+    public init(skillID: String, actionID: String, text: String) {
+        self.skillID = skillID
+        self.actionID = actionID
+        self.text = text
+    }
+}
+
 /// Result of compilation, including any orphaned user examples.
 public struct CompilationResult: Sendable {
     public let index: CompiledIndex
@@ -54,10 +67,12 @@ public struct SkillCompiler: Sendable {
 
     /// Compile one or more YAML skill manifests into a CompiledIndex,
     /// merging user-provided examples alongside built-in ones.
+    /// Suppressed examples are skipped during compilation.
     /// User examples referencing unknown (skillID, actionID) pairs are returned as orphans.
     public func compile(
         manifests: [YAMLSkillManifest],
-        userExamples: [UserExample]
+        userExamples: [UserExample] = [],
+        suppressedExamples: [SuppressedExample] = []
     ) async throws -> CompilationResult {
         guard languages.isEmpty == false else {
             throw SkillCompilerError.noLanguagesConfigured
@@ -67,6 +82,9 @@ public struct SkillCompiler: Sendable {
             grouping: userExamples,
             by: { "\($0.skillID)|\($0.actionID)" }
         )
+
+        // Build suppression lookup: Set of "skillID|actionID|text"
+        let suppressedSet = Set(suppressedExamples.map { "\($0.skillID)|\($0.actionID)|\($0.text)" })
 
         var validPairs = Set<String>()
         var entries: [CompiledEntry] = []
@@ -79,7 +97,8 @@ public struct SkillCompiler: Sendable {
                 let actionEntries = await compileAction(
                     action: action,
                     skillID: manifest.skillID,
-                    skillName: manifest.name
+                    skillName: manifest.name,
+                    suppressedSet: suppressedSet
                 )
                 entries.append(contentsOf: actionEntries)
 
@@ -106,12 +125,21 @@ public struct SkillCompiler: Sendable {
     private func compileAction(
         action: YAMLSkillAction,
         skillID: String,
-        skillName: String
+        skillName: String,
+        suppressedSet: Set<String> = []
     ) async -> [CompiledEntry] {
         var entries: [CompiledEntry] = []
 
+        // Filter out suppressed examples
+        let activeExamples = action.examples.filter {
+            !suppressedSet.contains("\(skillID)|\(action.id)|\($0)")
+        }
+        let activeNegativeExamples = action.negativeExamples.filter {
+            !suppressedSet.contains("\(skillID)|\(action.id)|\($0)")
+        }
+
         // Detect source language of examples
-        let sampleText = action.examples.prefix(3).joined(separator: " ")
+        let sampleText = activeExamples.prefix(3).joined(separator: " ")
         let sourceLanguage = translationService.detectLanguage(of: sampleText) ?? "en"
 
         // Build texts to embed per language
@@ -124,10 +152,10 @@ public struct SkillCompiler: Sendable {
             // Positive examples
             var textsToEmbed: [String]
             if language == sourceLanguage {
-                textsToEmbed = action.examples
+                textsToEmbed = activeExamples
             } else {
                 textsToEmbed = await translationService.translate(
-                    examples: action.examples,
+                    examples: activeExamples,
                     fromLanguage: sourceLanguage,
                     toLanguage: language,
                     context: translationContext
@@ -170,10 +198,10 @@ public struct SkillCompiler: Sendable {
             // Negative examples
             var negativeTexts: [String]
             if language == sourceLanguage {
-                negativeTexts = action.negativeExamples
-            } else if action.negativeExamples.isEmpty == false {
+                negativeTexts = activeNegativeExamples
+            } else if activeNegativeExamples.isEmpty == false {
                 negativeTexts = await translationService.translate(
-                    examples: action.negativeExamples,
+                    examples: activeNegativeExamples,
                     fromLanguage: sourceLanguage,
                     toLanguage: language,
                     context: translationContext

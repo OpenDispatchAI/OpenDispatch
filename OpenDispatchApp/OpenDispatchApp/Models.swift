@@ -169,6 +169,26 @@ final class UserExampleRecord {
     }
 }
 
+@Model
+final class SuppressedExampleRecord {
+    @Attribute(.unique) var id: UUID
+    var skillID: String
+    var actionID: String
+    var text: String
+
+    init(
+        id: UUID = UUID(),
+        skillID: String,
+        actionID: String,
+        text: String
+    ) {
+        self.id = id
+        self.skillID = skillID
+        self.actionID = actionID
+        self.text = text
+    }
+}
+
 enum JSONCodec {
     nonisolated static func encodeString<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()

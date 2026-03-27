@@ -7,8 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		60184F9D2F76F757009F364D /* BundledSkills in Resources */ = {isa = PBXBuildFile; fileRef = 60184F9C2F76F757009F364D /* BundledSkills */; };
+		60184FA02F76FF9B009F364D /* ParaphraseMultiMiniLM.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 60184F9E2F76FF9B009F364D /* ParaphraseMultiMiniLM.mlpackage */; };
+		60184FA12F76FF9B009F364D /* tokenizer_vocab.tsv in Resources */ = {isa = PBXBuildFile; fileRef = 60184F9F2F76FF9B009F364D /* tokenizer_vocab.tsv */; };
 		607270E02F685C5D0031DAAF /* SkillCompiler in Frameworks */ = {isa = PBXBuildFile; productRef = 607270DF2F685C5D0031DAAF /* SkillCompiler */; };
-		60795FCA2F6AAA8B009F229C /* ParaphraseMultiMiniLM in Resources */ = {isa = PBXBuildFile; fileRef = 60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */; };
 		A1B2C3D4E5F6000000000001 /* CapabilityRegistry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000011 /* CapabilityRegistry */; };
 		A1B2C3D4E5F6000000000002 /* RouterCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000012 /* RouterCore */; };
 		A1B2C3D4E5F6000000000003 /* SkillRegistry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000013 /* SkillRegistry */; };
@@ -17,6 +19,20 @@
 		A1B2C3D4E5F6000000000006 /* SystemProviders in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000016 /* SystemProviders */; };
 		A1B2C3D4E5F6000000000007 /* ExternalProviders in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000017 /* ExternalProviders */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXBuildRule section */
+		60184FA22F770084009F364D /* PBXBuildRule */ = {
+			isa = PBXBuildRule;
+			compilerSpec = com.apple.compilers.proxy.script;
+			fileType = folder.mlpackage;
+			inputFiles = (
+			);
+			isEditable = 1;
+			outputFiles = (
+			);
+			script = "# coremlc\n";
+		};
+/* End PBXBuildRule section */
 
 /* Begin PBXContainerItemProxy section */
 		606F02C82F66AE1C002CEC2D /* PBXContainerItemProxy */ = {
@@ -36,6 +52,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		60184F9C2F76F757009F364D /* BundledSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BundledSkills; path = ../BundledSkills; sourceTree = "<group>"; };
+		60184F9E2F76FF9B009F364D /* ParaphraseMultiMiniLM.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; name = ParaphraseMultiMiniLM.mlpackage; path = ../ParaphraseMultiMiniLM/ParaphraseMultiMiniLM.mlpackage; sourceTree = "<group>"; };
+		60184F9F2F76FF9B009F364D /* tokenizer_vocab.tsv */ = {isa = PBXFileReference; lastKnownFileType = text; name = tokenizer_vocab.tsv; path = ../ParaphraseMultiMiniLM/tokenizer_vocab.tsv; sourceTree = "<group>"; };
 		606F02B52F66AE1B002CEC2D /* OpenDispatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenDispatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		606F02C72F66AE1C002CEC2D /* OpenDispatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenDispatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		606F02D12F66AE1C002CEC2D /* OpenDispatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenDispatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -45,7 +64,6 @@
 		606F02E92F66B5DF002CEC2D /* CapabilityRegistry */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = CapabilityRegistry; path = ../Packages/CapabilityRegistry; sourceTree = SOURCE_ROOT; };
 		606F02EA2F66B600002CEC2D /* Executors */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Executors; path = ../Packages/Executors; sourceTree = SOURCE_ROOT; };
 		607270E22F685CEF0031DAAF /* SkillCompiler */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = SkillCompiler; path = ../Packages/SkillCompiler; sourceTree = SOURCE_ROOT; };
-		60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ParaphraseMultiMiniLM; path = ../ParaphraseMultiMiniLM; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000008 /* SystemProviders */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = SystemProviders; path = ../Packages/SystemProviders; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F6000000000009 /* ExternalProviders */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ExternalProviders; path = ../Packages/ExternalProviders; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -104,7 +122,9 @@
 		606F02AC2F66AE1B002CEC2D = {
 			isa = PBXGroup;
 			children = (
-				60795FC92F6AAA8B009F229C /* ParaphraseMultiMiniLM */,
+				60184F9E2F76FF9B009F364D /* ParaphraseMultiMiniLM.mlpackage */,
+				60184F9F2F76FF9B009F364D /* tokenizer_vocab.tsv */,
+				60184F9C2F76F757009F364D /* BundledSkills */,
 				A1B2C3D4E5F6000000000009 /* ExternalProviders */,
 				A1B2C3D4E5F6000000000008 /* SystemProviders */,
 				606F02EA2F66B600002CEC2D /* Executors */,
@@ -142,6 +162,7 @@
 				606F02B32F66AE1B002CEC2D /* Resources */,
 			);
 			buildRules = (
+				60184FA22F770084009F364D /* PBXBuildRule */,
 			);
 			dependencies = (
 			);
@@ -269,7 +290,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				60795FCA2F6AAA8B009F229C /* ParaphraseMultiMiniLM in Resources */,
+				60184FA02F76FF9B009F364D /* ParaphraseMultiMiniLM.mlpackage in Resources */,
+				60184FA12F76FF9B009F364D /* tokenizer_vocab.tsv in Resources */,
+				60184F9D2F76F757009F364D /* BundledSkills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
