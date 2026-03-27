@@ -88,6 +88,7 @@ final class AppState: ObservableObject {
     @Published var lastMatchCandidates: [MatchCandidate] = []
     @Published var configuredLanguages: [String] = ["en"]
     @Published var orphanedUserExamples: [UserExample] = []
+    @Published var wizardPromptSkill: YAMLSkillManifest?
 
     let modelContainer: ModelContainer
     private(set) var compiledIndex: CompiledIndex?
@@ -505,6 +506,12 @@ final class AppState: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func sharedCapabilities(for manifest: YAMLSkillManifest) -> [String] {
+        let newCapabilities = Set(manifest.actions.map(\.id))
+        let existingCapabilities = Set(compiledManifests.flatMap(\.actions).map(\.id))
+        return Array(newCapabilities.intersection(existingCapabilities))
     }
 
     func selectedProvider(for capability: String) -> String {

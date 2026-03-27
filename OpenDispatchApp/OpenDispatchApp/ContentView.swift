@@ -7,6 +7,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var showExampleWizard = false
+
     var body: some View {
         TabView {
             HomeView()
@@ -25,6 +28,29 @@ struct ContentView: View {
                 .tabItem {
                     Label("Debug", systemImage: "ladybug")
                 }
+        }
+        .alert(
+            "Set Up Routing?",
+            isPresented: Binding(
+                get: { appState.wizardPromptSkill != nil },
+                set: { if !$0 { appState.wizardPromptSkill = nil } }
+            )
+        ) {
+            Button("Set Up Now") {
+                appState.wizardPromptSkill = nil
+                showExampleWizard = true
+            }
+            Button("Later", role: .cancel) {
+                appState.wizardPromptSkill = nil
+            }
+        } message: {
+            if let skill = appState.wizardPromptSkill {
+                let shared = appState.sharedCapabilities(for: skill)
+                Text("\(skill.name) can also handle \(shared.joined(separator: ", ")). Want to set up which commands go where?")
+            }
+        }
+        .sheet(isPresented: $showExampleWizard) {
+            ExampleWizardView()
         }
     }
 }
