@@ -230,102 +230,15 @@ private struct HomeView: View {
     }
 }
 
-private struct SkillManagerView: View {
+private struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \RepositorySourceRecord.name) private var repositories: [RepositorySourceRecord]
+    @State private var newLanguageCode = ""
     @State private var isAddingRepository = false
     @State private var repositoryName = ""
     @State private var repositoryKind: RepositorySourceKind = .httpIndex
     @State private var repositoryLocation = ""
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Repositories") {
-                    ForEach(repositories) { repository in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(repository.name)
-                            Text(repository.location)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let error = repository.lastError, error.isEmpty == false {
-                                Text(error)
-                                    .font(.caption2)
-                                    .foregroundStyle(.red)
-                            } else {
-                                Text("Discovered skills: \(repository.discoveredSkillsCount)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                }
-
-                Section("Validation") {
-                    if appState.validationMessages.isEmpty {
-                        Text("No validation issues.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(appState.validationMessages, id: \.self) { message in
-                            Text(message)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Skill Manager")
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("Refresh") {
-                        Task { await appState.refreshRepositories() }
-                    }
-                    Button("Repository") {
-                        isAddingRepository = true
-                    }
-                }
-            }
-            .sheet(isPresented: $isAddingRepository) {
-                NavigationStack {
-                    Form {
-                        TextField("Name", text: $repositoryName)
-                        Picker("Type", selection: $repositoryKind) {
-                            ForEach(RepositorySourceKind.allCases, id: \.self) { kind in
-                                Text(kind.rawValue).tag(kind)
-                            }
-                        }
-                        TextField("Location", text: $repositoryLocation)
-                    }
-                    .navigationTitle("Add Repository")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                isAddingRepository = false
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                Task {
-                                    await appState.addRepository(
-                                        name: repositoryName,
-                                        kind: repositoryKind,
-                                        location: repositoryLocation
-                                    )
-                                    repositoryName = ""
-                                    repositoryLocation = ""
-                                    repositoryKind = .httpIndex
-                                    isAddingRepository = false
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct SettingsView: View {
-    @EnvironmentObject private var appState: AppState
-    @State private var newLanguageCode = ""
 
     private var sortedCapabilities: [String] {
         appState.providerOptions.keys.sorted()
@@ -442,8 +355,76 @@ private struct SettingsView: View {
                         Label("Teach OpenDispatch", systemImage: "text.bubble")
                     }
                 }
+
+                Section("Repositories") {
+                    ForEach(repositories) { repository in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(repository.name)
+                            Text(repository.location)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let error = repository.lastError, error.isEmpty == false {
+                                Text(error)
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            } else {
+                                Text("Discovered skills: \(repository.discoveredSkillsCount)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        for index in offsets {
+                            modelContext.delete(repositories[index])
+                        }
+                        try? modelContext.save()
+                    }
+                    Button("Add Repository") {
+                        isAddingRepository = true
+                    }
+                    Button("Refresh All") {
+                        Task { await appState.refreshRepositories() }
+                    }
+                }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $isAddingRepository) {
+                NavigationStack {
+                    Form {
+                        TextField("Name", text: $repositoryName)
+                        Picker("Type", selection: $repositoryKind) {
+                            ForEach(RepositorySourceKind.allCases, id: \.self) { kind in
+                                Text(kind.rawValue).tag(kind)
+                            }
+                        }
+                        TextField("Location", text: $repositoryLocation)
+                    }
+                    .navigationTitle("Add Repository")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                isAddingRepository = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                Task {
+                                    await appState.addRepository(
+                                        name: repositoryName,
+                                        kind: repositoryKind,
+                                        location: repositoryLocation
+                                    )
+                                    repositoryName = ""
+                                    repositoryLocation = ""
+                                    repositoryKind = .httpIndex
+                                    isAddingRepository = false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
