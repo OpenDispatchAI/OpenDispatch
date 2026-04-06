@@ -296,6 +296,24 @@ final class AppState: ObservableObject {
             }
         }
 
+        // Load store-installed skills from App Support
+        let storeService = SkillStoreService()
+        if let installedDir = try? storeService.installedSkillsDirectory(),
+           let skillDirs = try? FileManager.default.contentsOfDirectory(
+               at: installedDir, includingPropertiesForKeys: nil
+           ) {
+            for dir in skillDirs {
+                let yamlURL = dir.appendingPathComponent("skill.yaml")
+                if var manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
+                    manifest = manifest.withSource(.installed)
+                    if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
+                        manifests.append(manifest)
+                        appendLog("Loaded installed skill: \(manifest.name) (\(manifest.actions.count) actions)")
+                    }
+                }
+            }
+        }
+
         // Also pick up any loose .yaml files in bundle root (for future use)
         if let yamlURLs = Bundle.main.urls(forResourcesWithExtension: "yaml", subdirectory: nil) {
             for url in yamlURLs {
