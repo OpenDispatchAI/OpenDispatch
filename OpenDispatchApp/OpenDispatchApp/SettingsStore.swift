@@ -2,6 +2,22 @@ import CapabilityRegistry
 import Foundation
 import ModelRuntime
 
+enum BackendSelection: String, CaseIterable, Identifiable {
+    case appleFoundation = "apple_foundation"
+    case embeddingRouter = "embedding_router"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .appleFoundation:
+            "Apple Foundation"
+        case .embeddingRouter:
+            "Compiled Embedding"
+        }
+    }
+}
+
 struct ProviderOption: Identifiable, Hashable {
     let id: String
     let name: String

@@ -5,6 +5,23 @@ import SkillCompiler
 import SkillRegistry
 import SwiftData
 
+enum CompileStatus: Equatable {
+    case notCompiled
+    case compiling(progress: String)
+    case compiled(entryCount: Int, skillCount: Int, timestamp: Date)
+    case failed(String)
+
+    static func == (lhs: CompileStatus, rhs: CompileStatus) -> Bool {
+        switch (lhs, rhs) {
+        case (.notCompiled, .notCompiled): true
+        case let (.compiling(a), .compiling(b)): a == b
+        case let (.compiled(a1, a2, a3), .compiled(b1, b2, b3)): a1 == b1 && a2 == b2 && a3 == b3
+        case let (.failed(a), .failed(b)): a == b
+        default: false
+        }
+    }
+}
+
 @MainActor @Observable final class SkillCompilationManager {
 
     var compiledIndex: CompiledIndex?
