@@ -134,3 +134,88 @@ import Testing
     #expect(result.repository == "Local")
     #expect(result.skills.count == 1)
 }
+
+@Test func repositoryIndexDecodesAPIFormat() throws {
+    let json = """
+    {
+        "version": 1,
+        "generated_at": "2026-04-05T17:10:09+00:00",
+        "skill_count": 1,
+        "skills": [
+            {
+                "skill_id": "tesla",
+                "name": "Tesla",
+                "version": "1.0.0",
+                "description": "Control your car via OpenDispatch.",
+                "author": "OpenDispatch",
+                "action_count": 30,
+                "example_count": 114,
+                "tags": ["automotive"],
+                "requires_bridge_shortcut": false,
+                "download_url": "https://opendispatch.ai/api/v1/skills/tesla/download"
+            }
+        ]
+    }
+    """
+    let data = Data(json.utf8)
+    let index = try JSONDecoder().decode(SkillRepositoryIndex.self, from: data)
+
+    #expect(index.version == 1)
+    #expect(index.skillCount == 1)
+    #expect(index.skills.count == 1)
+
+    let entry = index.skills[0]
+    #expect(entry.skillID == "tesla")
+    #expect(entry.name == "Tesla")
+    #expect(entry.downloadURL == "https://opendispatch.ai/api/v1/skills/tesla/download")
+    #expect(entry.tags == ["automotive"])
+    #expect(entry.path == nil)
+}
+
+@Test func skillInfoDecodesFromAPI() throws {
+    let json = """
+    {
+        "skill_id": "tesla",
+        "name": "Tesla",
+        "version": "1.0.0",
+        "description": "Full implementation of the official Tesla app.",
+        "author": "OpenDispatch",
+        "author_url": null,
+        "tags": ["automotive"],
+        "languages": [],
+        "requires_bridge_shortcut": false,
+        "bridge_shortcut": "OpenDispatch - Tesla V1",
+        "bridge_shortcut_share_url": "https://opendispatch.ai/api/v1/skills/tesla/shortcut",
+        "actions": [
+            {
+                "id": "vehicle.unlock",
+                "title": "Unlock",
+                "description": "Unlock your Tesla vehicle",
+                "example_count": 5,
+                "has_parameters": false,
+                "confirmation": null
+            },
+            {
+                "id": "vehicle.climate.set_temperature",
+                "title": "Set Temperature",
+                "description": "Set the Tesla cabin temperature",
+                "example_count": 4,
+                "has_parameters": true,
+                "confirmation": null
+            }
+        ],
+        "created_at": "2026-04-04T20:06:30+00:00",
+        "updated_at": "2026-04-05T16:55:57+00:00"
+    }
+    """
+    let data = Data(json.utf8)
+    let info = try JSONDecoder().decode(SkillInfo.self, from: data)
+
+    #expect(info.skillID == "tesla")
+    #expect(info.name == "Tesla")
+    #expect(info.actions.count == 2)
+    #expect(info.actions[0].id == "vehicle.unlock")
+    #expect(info.actions[0].hasParameters == false)
+    #expect(info.actions[1].hasParameters == true)
+    #expect(info.bridgeShortcut == "OpenDispatch - Tesla V1")
+}
