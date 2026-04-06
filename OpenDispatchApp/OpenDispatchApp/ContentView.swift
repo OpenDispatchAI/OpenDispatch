@@ -4,7 +4,6 @@ import SkillCompiler
 import SkillRegistry
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
@@ -233,9 +232,7 @@ private struct HomeView: View {
 
 private struct SkillManagerView: View {
     @EnvironmentObject private var appState: AppState
-    @Query(sort: \InstalledSkillRecord.installedAt, order: .reverse) private var installedSkills: [InstalledSkillRecord]
     @Query(sort: \RepositorySourceRecord.name) private var repositories: [RepositorySourceRecord]
-    @State private var isImporting = false
     @State private var isAddingRepository = false
     @State private var repositoryName = ""
     @State private var repositoryKind: RepositorySourceKind = .httpIndex
@@ -244,26 +241,6 @@ private struct SkillManagerView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Installed Skills") {
-                    if installedSkills.isEmpty {
-                        Text("No skills installed.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(installedSkills) { skill in
-                            let capabilities = skill.installedSkill?.manifest.capabilities.map(\.rawValue).joined(separator: ", ")
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(skill.name)
-                                Text("\(capabilities?.isEmpty == false ? capabilities! : skill.capability) via \(skill.providerName)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(skill.sourceLocation)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                }
-
                 Section("Repositories") {
                     ForEach(repositories) { repository in
                         VStack(alignment: .leading, spacing: 4) {
@@ -304,21 +281,6 @@ private struct SkillManagerView: View {
                     Button("Repository") {
                         isAddingRepository = true
                     }
-                    Button("Import") {
-                        isImporting = true
-                    }
-                }
-            }
-            .fileImporter(
-                isPresented: $isImporting,
-                allowedContentTypes: [.folder],
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case let .success(urls):
-                    Task { await appState.importSkillDirectories(urls) }
-                case .failure:
-                    break
                 }
             }
             .sheet(isPresented: $isAddingRepository) {

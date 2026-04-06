@@ -434,52 +434,6 @@ final class AppState: ObservableObject {
         pendingDestinationChoice = nil
     }
 
-    func importSkillDirectories(_ urls: [URL]) async {
-        do {
-            let skillService = try makeSkillService()
-            let context = ModelContext(modelContainer)
-            var messages: [String] = []
-
-            for originalURL in urls {
-                let accessed = originalURL.startAccessingSecurityScopedResource()
-                defer {
-                    if accessed {
-                        originalURL.stopAccessingSecurityScopedResource()
-                    }
-                }
-
-                let loaded = await skillService.loadSkillPack(at: originalURL)
-                if let installed = skillService.installableSkill(from: loaded) {
-                    let descriptor = FetchDescriptor<InstalledSkillRecord>(
-                        predicate: #Predicate { $0.id == installed.id }
-                    )
-                    if let existing = (try? context.fetch(descriptor))?.first {
-                        existing.name = installed.manifest.displayName
-                        existing.providerName = installed.manifest.displayName
-                        existing.providerID = installed.manifest.resolvedProviderID
-                        existing.capability = installed.manifest.primaryCapability?.rawValue ?? ""
-                        existing.manifestJSON = JSONCodec.encodeString(installed.manifest)
-                        existing.documentation = installed.documentation
-                        existing.sourceLocation = installed.sourceLocation
-                        existing.installedAt = installed.installedAt
-                        existing.validationErrorsJSON = nil
-                    } else {
-                        context.insert(InstalledSkillRecord(skill: installed))
-                    }
-                    messages.append("Imported \(installed.manifest.displayName)")
-                } else {
-                    messages.append(contentsOf: loaded.validationErrors.map(\.description))
-                }
-            }
-
-            try context.save()
-            validationMessages = messages
-            await refreshProviderOptions()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
     func addRepository(name: String, kind: RepositorySourceKind, location: String) async {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -559,6 +513,11 @@ final class AppState: ObservableObject {
         persistSettings()
     }
 
+    static let defaultSkillRepoURL: String = {
+        ProcessInfo.processInfo.environment["OD_SKILL_REPO_URL"]
+            ?? "https://opendispatch.ai/api/v1/index.json"
+    }()
+
     private func ensureDefaultRepository() async {
         let context = ModelContext(modelContainer)
         let existing = (try? context.fetch(FetchDescriptor<RepositorySourceRecord>())) ?? []
@@ -568,7 +527,7 @@ final class AppState: ObservableObject {
             RepositorySourceRecord(
                 name: "OpenDispatch Official",
                 kind: RepositorySourceKind.httpIndex.rawValue,
-                location: "https://skills.opendispatch.ai/index.json"
+                location: Self.defaultSkillRepoURL
             )
         )
         try? context.save()
@@ -813,10 +772,9 @@ final class AppState: ObservableObject {
     }
 
     private func loadInstalledSkills() throws -> [InstalledSkill] {
-        let context = ModelContext(modelContainer)
-        return try context
-            .fetch(FetchDescriptor<InstalledSkillRecord>(sortBy: [SortDescriptor(\.installedAt, order: .reverse)]))
-            .compactMap(\.installedSkill)
+        // Legacy JSON-based skills are no longer stored in InstalledSkillRecord.
+        // All skill loading now goes through the YAML pipeline (compiledManifests).
+        return []
     }
 
     private func makeSkillService() throws -> SkillRegistryService {

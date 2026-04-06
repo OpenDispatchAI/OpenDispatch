@@ -42,39 +42,30 @@ final class DispatchEventRecord {
 
 @Model
 final class InstalledSkillRecord {
-    @Attribute(.unique) var id: UUID
+    @Attribute(.unique) var skillID: String
+    var id: UUID
     var name: String
-    var providerName: String
-    var providerID: String
-    var capability: String
-    var manifestJSON: String
-    var documentation: String
-    var sourceLocation: String
+    var version: String
+    var repositoryLocation: String
     var installedAt: Date
-    var validationErrorsJSON: String?
+    var yamlFilePath: String
 
     init(
         id: UUID = UUID(),
+        skillID: String,
         name: String,
-        providerName: String,
-        providerID: String,
-        capability: String,
-        manifestJSON: String,
-        documentation: String,
-        sourceLocation: String,
-        installedAt: Date,
-        validationErrorsJSON: String? = nil
+        version: String,
+        repositoryLocation: String,
+        installedAt: Date = Date(),
+        yamlFilePath: String
     ) {
         self.id = id
+        self.skillID = skillID
         self.name = name
-        self.providerName = providerName
-        self.providerID = providerID
-        self.capability = capability
-        self.manifestJSON = manifestJSON
-        self.documentation = documentation
-        self.sourceLocation = sourceLocation
+        self.version = version
+        self.repositoryLocation = repositoryLocation
         self.installedAt = installedAt
-        self.validationErrorsJSON = validationErrorsJSON
+        self.yamlFilePath = yamlFilePath
     }
 }
 
@@ -249,44 +240,6 @@ actor SwiftDataLocalLogSink: LocalLogSink {
             )
         )
         try context.save()
-    }
-}
-
-extension InstalledSkillRecord {
-    convenience init(skill: InstalledSkill, validationErrors: [String] = []) {
-        self.init(
-            id: skill.id,
-            name: skill.manifest.displayName,
-            providerName: skill.manifest.displayName,
-            providerID: skill.manifest.resolvedProviderID,
-            capability: skill.manifest.primaryCapability?.rawValue ?? "",
-            manifestJSON: JSONCodec.encodeString(skill.manifest),
-            documentation: skill.documentation,
-            sourceLocation: skill.sourceLocation,
-            installedAt: skill.installedAt,
-            validationErrorsJSON: validationErrors.isEmpty ? nil : JSONCodec.encodeString(validationErrors)
-        )
-    }
-
-    var installedSkill: InstalledSkill? {
-        guard let manifest = try? JSONCodec.decode(SkillManifest.self, from: manifestJSON) else {
-            return nil
-        }
-        return InstalledSkill(
-            id: id,
-            manifest: manifest,
-            documentation: documentation,
-            sourceLocation: sourceLocation,
-            installedAt: installedAt
-        )
-    }
-
-    var validationErrors: [String] {
-        guard let validationErrorsJSON,
-              let errors = try? JSONCodec.decode([String].self, from: validationErrorsJSON) else {
-            return []
-        }
-        return errors
     }
 }
 

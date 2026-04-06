@@ -503,28 +503,6 @@ public struct InstalledSkill: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct LoadedSkillPack: Hashable, Sendable {
-    public let directoryURL: URL
-    public let documentation: String
-    public let manifest: SkillManifest?
-    public let validationErrors: [SkillValidationError]
-
-    public init(
-        directoryURL: URL,
-        documentation: String,
-        manifest: SkillManifest?,
-        validationErrors: [SkillValidationError]
-    ) {
-        self.directoryURL = directoryURL
-        self.documentation = documentation
-        self.manifest = manifest
-        self.validationErrors = validationErrors
-    }
-
-    public var isValid: Bool {
-        manifest != nil && validationErrors.isEmpty
-    }
-}
 
 public enum SkillValidationError: Error, Hashable, Codable, Sendable, CustomStringConvertible {
     case missingManifest
@@ -586,22 +564,94 @@ public enum SkillValidationError: Error, Hashable, Codable, Sendable, CustomStri
 }
 
 public struct SkillRepositoryIndex: Codable, Hashable, Sendable {
-    public let repository: String
+    public let version: Int?
+    public let repository: String?
+    public let generatedAt: String?
+    public let skillCount: Int?
     public let skills: [SkillRepositoryEntry]
 
-    public init(repository: String, skills: [SkillRepositoryEntry]) {
+    public init(
+        version: Int? = nil,
+        repository: String? = nil,
+        generatedAt: String? = nil,
+        skillCount: Int? = nil,
+        skills: [SkillRepositoryEntry]
+    ) {
+        self.version = version
         self.repository = repository
+        self.generatedAt = generatedAt
+        self.skillCount = skillCount
         self.skills = skills
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case repository
+        case generatedAt = "generated_at"
+        case skillCount = "skill_count"
+        case skills
     }
 }
 
 public struct SkillRepositoryEntry: Codable, Hashable, Sendable {
+    public let skillID: String?
     public let name: String
-    public let path: String
+    public let version: String?
+    public let description: String?
+    public let author: String?
+    public let authorURL: String?
+    public let actionCount: Int?
+    public let exampleCount: Int?
+    public let tags: [String]?
+    public let languages: [String]?
+    public let requiresBridgeShortcut: Bool?
+    public let bridgeShortcutShareURL: String?
+    public let downloadURL: String?
+    public let icon: String?
+    public let createdAt: String?
+    public let updatedAt: String?
+
+    /// Legacy field for local folder repositories.
+    public let path: String?
 
     public init(name: String, path: String) {
         self.name = name
         self.path = path
+        skillID = nil
+        version = nil
+        description = nil
+        author = nil
+        authorURL = nil
+        actionCount = nil
+        exampleCount = nil
+        tags = nil
+        languages = nil
+        requiresBridgeShortcut = nil
+        bridgeShortcutShareURL = nil
+        downloadURL = nil
+        icon = nil
+        createdAt = nil
+        updatedAt = nil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case skillID = "skill_id"
+        case name
+        case version
+        case description
+        case author
+        case authorURL = "author_url"
+        case actionCount = "action_count"
+        case exampleCount = "example_count"
+        case tags
+        case languages
+        case requiresBridgeShortcut = "requires_bridge_shortcut"
+        case bridgeShortcutShareURL = "bridge_shortcut_share_url"
+        case downloadURL = "download_url"
+        case icon
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case path
     }
 }
 
@@ -639,56 +689,6 @@ public struct SkillRegistryService: Sendable {
 
     public init(capabilityRegistry: CapabilityRegistry) {
         self.capabilityRegistry = capabilityRegistry
-    }
-
-    public func loadSkillPack(at directoryURL: URL) async -> LoadedSkillPack {
-        let manifestURL = directoryURL.appending(path: "skill.json")
-        let documentationURL = directoryURL.appending(path: "SKILL.md")
-        let documentation = (try? String(contentsOf: documentationURL, encoding: .utf8)) ?? ""
-        let fileManager = FileManager.default
-
-        var errors: [SkillValidationError] = []
-        if fileManager.fileExists(atPath: documentationURL.path) == false {
-            errors.append(.missingDocumentation)
-        }
-
-        guard fileManager.fileExists(atPath: manifestURL.path) else {
-            errors.append(.missingManifest)
-            return LoadedSkillPack(
-                directoryURL: directoryURL,
-                documentation: documentation,
-                manifest: nil,
-                validationErrors: errors
-            )
-        }
-
-        do {
-            let data = try Data(contentsOf: manifestURL)
-            let manifest = try JSONDecoder().decode(SkillManifest.self, from: data)
-            errors.append(contentsOf: validate(manifest: manifest))
-            return LoadedSkillPack(
-                directoryURL: directoryURL,
-                documentation: documentation,
-                manifest: manifest,
-                validationErrors: errors
-            )
-        } catch {
-            errors.append(.invalidManifest(error.localizedDescription))
-            return LoadedSkillPack(
-                directoryURL: directoryURL,
-                documentation: documentation,
-                manifest: nil,
-                validationErrors: errors
-            )
-        }
-    }
-
-    public func loadSkillPacks(at directoryURLs: [URL]) async -> [LoadedSkillPack] {
-        var loaded: [LoadedSkillPack] = []
-        for url in directoryURLs {
-            loaded.append(await loadSkillPack(at: url))
-        }
-        return loaded
     }
 
     public func validate(manifest: SkillManifest) -> [SkillValidationError] {
@@ -765,18 +765,6 @@ public struct SkillRegistryService: Sendable {
         }
 
         return errors
-    }
-
-    public func installableSkill(from loadedPack: LoadedSkillPack) -> InstalledSkill? {
-        guard let manifest = loadedPack.manifest, loadedPack.validationErrors.isEmpty else {
-            return nil
-        }
-
-        return InstalledSkill(
-            manifest: manifest,
-            documentation: loadedPack.documentation,
-            sourceLocation: loadedPack.directoryURL.path
-        )
     }
 
     public func planningContexts(from skills: [InstalledSkill]) -> [PlannerSkillContext] {
@@ -865,18 +853,26 @@ public struct SkillRegistryService: Sendable {
         for entry: SkillRepositoryEntry,
         in source: RepositorySource
     ) throws -> URL {
+        if let downloadURL = entry.downloadURL, let url = URL(string: downloadURL) {
+            return url
+        }
+
+        guard let path = entry.path else {
+            throw SkillRegistryError.invalidRepositoryLocation("Entry '\(entry.name)' has no download_url or path.")
+        }
+
         switch source.kind {
         case .httpIndex:
             guard let base = URL(string: source.location)?.deletingLastPathComponent() else {
                 throw SkillRegistryError.invalidRepositoryLocation(source.location)
             }
-            return base.appending(path: entry.path, directoryHint: .isDirectory)
+            return base.appending(path: path, directoryHint: .isDirectory)
         case .gitHub:
             let indexURL = try resolvedIndexURL(for: source)
-            return indexURL.deletingLastPathComponent().appending(path: entry.path, directoryHint: .isDirectory)
+            return indexURL.deletingLastPathComponent().appending(path: path, directoryHint: .isDirectory)
         case .localFolder:
             return URL(fileURLWithPath: source.location, isDirectory: true)
-                .appending(path: entry.path, directoryHint: .isDirectory)
+                .appending(path: path, directoryHint: .isDirectory)
         }
     }
 
