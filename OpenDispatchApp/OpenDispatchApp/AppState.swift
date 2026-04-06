@@ -492,6 +492,65 @@ final class AppState: ObservableObject {
         }
     }
 
+    func installSkillFromStore(entry: SkillRepositoryEntry, repositoryLocation: String) async {
+        guard let downloadURLString = entry.downloadURL,
+              let downloadURL = URL(string: downloadURLString),
+              let skillID = entry.skillID else {
+            lastError = "Skill has no download URL or ID."
+            return
+        }
+
+        do {
+            let storeService = SkillStoreService()
+            let yaml = try await storeService.downloadSkillYAML(from: downloadURL)
+            let _ = try storeService.installSkill(yaml: yaml, skillID: skillID)
+
+            let context = ModelContext(modelContainer)
+            let descriptor = FetchDescriptor<InstalledSkillRecord>(
+                predicate: #Predicate { $0.skillID == skillID }
+            )
+            if let existing = (try? context.fetch(descriptor))?.first {
+                existing.name = entry.name
+                existing.version = entry.version ?? "1.0.0"
+                existing.yamlFilePath = "\(skillID)/skill.yaml"
+                existing.installedAt = Date()
+            } else {
+                context.insert(InstalledSkillRecord(
+                    skillID: skillID,
+                    name: entry.name,
+                    version: entry.version ?? "1.0.0",
+                    repositoryLocation: repositoryLocation,
+                    yamlFilePath: "\(skillID)/skill.yaml"
+                ))
+            }
+            try context.save()
+
+            await recompileSkillIndex()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func uninstallSkill(skillID: String) async {
+        do {
+            let storeService = SkillStoreService()
+            try storeService.uninstallSkill(skillID: skillID)
+
+            let context = ModelContext(modelContainer)
+            let descriptor = FetchDescriptor<InstalledSkillRecord>(
+                predicate: #Predicate { $0.skillID == skillID }
+            )
+            if let record = (try? context.fetch(descriptor))?.first {
+                context.delete(record)
+                try context.save()
+            }
+
+            await recompileSkillIndex()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func sharedCapabilities(for manifest: YAMLSkillManifest) -> [String] {
         let newCapabilities = Set(manifest.actions.map(\.id))
         let existingCapabilities = Set(compiledManifests.flatMap(\.actions).map(\.id))
