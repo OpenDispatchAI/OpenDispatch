@@ -15,7 +15,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Home", systemImage: "bolt.circle")
                 }
-            SkillManagerView()
+            SkillsView()
                 .tabItem {
                     Label("Skills", systemImage: "shippingbox")
                 }

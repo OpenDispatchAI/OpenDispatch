@@ -854,7 +854,7 @@ final class AppState: ObservableObject {
         return []
     }
 
-    private func makeSkillService() throws -> SkillRegistryService {
+    func makeSkillService() throws -> SkillRegistryService {
         SkillRegistryService(capabilityRegistry: try CapabilityRegistry())
     }
 
