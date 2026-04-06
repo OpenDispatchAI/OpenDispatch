@@ -4,6 +4,7 @@ import RouterCore
 public enum SkillSource: String, Hashable, Codable, Sendable {
     case bundle
     case user
+    case installed
 }
 
 public struct YAMLSkillManifest: Hashable, Codable, Sendable {
