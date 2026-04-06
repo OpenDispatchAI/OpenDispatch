@@ -3,9 +3,9 @@ import SwiftData
 import SwiftUI
 
 struct SkillsView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(RepositoryManager.self) private var repositories
     @Query(sort: \InstalledSkillRecord.skillID) private var installedSkills: [InstalledSkillRecord]
-    @Query(sort: \RepositorySourceRecord.name) private var repositories: [RepositorySourceRecord]
+    @Query(sort: \RepositorySourceRecord.name) private var repositoryRecords: [RepositorySourceRecord]
     @State private var indexEntries: [(repository: RepositorySourceRecord, entries: [SkillRepositoryEntry])] = []
     @State private var isLoading = false
     @State private var loadError: String?
@@ -76,8 +76,8 @@ struct SkillsView: View {
         var results: [(repository: RepositorySourceRecord, entries: [SkillRepositoryEntry])] = []
 
         do {
-            let skillService = try appState.makeSkillService()
-            for repository in repositories {
+            let skillService = try repositories.makeSkillService()
+            for repository in repositoryRecords {
                 guard let source = repository.repositorySource else { continue }
                 do {
                     let index = try await skillService.repositoryIndex(for: source)

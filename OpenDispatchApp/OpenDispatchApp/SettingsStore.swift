@@ -1,5 +1,11 @@
 import CapabilityRegistry
 import Foundation
+import ModelRuntime
+
+struct ProviderOption: Identifiable, Hashable {
+    let id: String
+    let name: String
+}
 
 @MainActor @Observable final class SettingsStore {
 

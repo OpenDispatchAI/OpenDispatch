@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(RepositoryManager.self) private var repositories
     @State private var showExampleWizard = false
 
     var body: some View {
@@ -44,7 +45,7 @@ struct ContentView: View {
             }
         } message: {
             if let skill = appState.wizardPromptSkill {
-                let shared = appState.sharedCapabilities(for: skill)
+                let shared = repositories.sharedCapabilities(for: skill)
                 Text("\(skill.name) can also handle \(shared.joined(separator: ", ")). Want to set up which commands go where?")
             }
         }
@@ -56,6 +57,7 @@ struct ContentView: View {
 
 private struct HomeView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(SettingsStore.self) private var settings
     @Query(sort: \DispatchEventRecord.timestamp, order: .reverse) private var events: [DispatchEventRecord]
     @StateObject private var speechCapture = SpeechCaptureManager()
     @State private var searchText = ""
@@ -77,10 +79,10 @@ private struct HomeView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Dispatch")
                             .font(.headline)
-                        Text("Planner: \(appState.backendSelection.title)")
+                        Text("Planner: \(settings.backendSelection.title)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if appState.dryRunEnabled {
+                        if settings.dryRunEnabled {
                             Text("Dry Run Mode is enabled. External actions will be planned, but not actually launched.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
@@ -231,9 +233,11 @@ private struct HomeView: View {
 }
 
 private struct SettingsView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(SettingsStore.self) private var settings
+    @Environment(SkillCompilationManager.self) private var compiler
+    @Environment(RepositoryManager.self) private var repositories
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \RepositorySourceRecord.name) private var repositories: [RepositorySourceRecord]
+    @Query(sort: \RepositorySourceRecord.name) private var repositoryRecords: [RepositorySourceRecord]
     @State private var newLanguageCode = ""
     @State private var isAddingRepository = false
     @State private var repositoryName = ""
@@ -241,21 +245,21 @@ private struct SettingsView: View {
     @State private var repositoryLocation = ""
 
     private var sortedCapabilities: [String] {
-        appState.providerOptions.keys.sorted()
+        settings.providerOptions.keys.sorted()
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Languages") {
-                    ForEach(appState.configuredLanguages, id: \.self) { lang in
+                    ForEach(compiler.configuredLanguages, id: \.self) { lang in
                         HStack {
                             Text(Locale.current.localizedString(forLanguageCode: lang) ?? lang)
                             Spacer()
-                            if appState.configuredLanguages.count > 1 {
+                            if compiler.configuredLanguages.count > 1 {
                                 Button(role: .destructive) {
-                                    appState.configuredLanguages.removeAll { $0 == lang }
-                                    Task { await appState.recompileSkillIndex() }
+                                    compiler.configuredLanguages.removeAll { $0 == lang }
+                                    Task { await compiler.recompileSkillIndex() }
                                 } label: {
                                     Image(systemName: "minus.circle")
                                 }
@@ -269,14 +273,14 @@ private struct SettingsView: View {
                         Button("Add") {
                             let code = newLanguageCode.trimmingCharacters(in: .whitespaces).lowercased()
                             guard code.isEmpty == false,
-                                  appState.configuredLanguages.contains(code) == false else { return }
-                            appState.configuredLanguages.append(code)
+                                  compiler.configuredLanguages.contains(code) == false else { return }
+                            compiler.configuredLanguages.append(code)
                             newLanguageCode = ""
-                            Task { await appState.recompileSkillIndex() }
+                            Task { await compiler.recompileSkillIndex() }
                         }
                         .disabled(newLanguageCode.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    if appState.configuredLanguages != ["en"] {
+                    if compiler.configuredLanguages != ["en"] {
                         Label("Multilingual support requires downloading an additional model (~470MB). Coming soon.", systemImage: "exclamationmark.triangle")
                             .font(.caption)
                             .foregroundStyle(.orange)
@@ -289,8 +293,8 @@ private struct SettingsView: View {
 
                 Section("Model Backend") {
                     Picker("Planner", selection: Binding(
-                        get: { appState.backendSelection },
-                        set: { appState.updateBackendSelection($0) }
+                        get: { settings.backendSelection },
+                        set: { settings.updateBackendSelection($0) }
                     )) {
                         ForEach(BackendSelection.allCases) { backend in
                             Text(backend.title).tag(backend)
@@ -299,15 +303,15 @@ private struct SettingsView: View {
                     Toggle(
                         "Enable Remote Escalation",
                         isOn: Binding(
-                            get: { appState.escalationEnabled },
-                            set: { appState.updateEscalation($0) }
+                            get: { settings.escalationEnabled },
+                            set: { settings.updateEscalation($0) }
                         )
                     )
                     Toggle(
                         "Dry Run Mode",
                         isOn: Binding(
-                            get: { appState.dryRunEnabled },
-                            set: { appState.updateDryRun($0) }
+                            get: { settings.dryRunEnabled },
+                            set: { settings.updateDryRun($0) }
                         )
                     )
                 }
@@ -317,13 +321,13 @@ private struct SettingsView: View {
                         HStack {
                             Text("Routing Sensitivity")
                             Spacer()
-                            Text(String(format: "%.2f", appState.confidenceGapThreshold))
+                            Text(String(format: "%.2f", settings.confidenceGapThreshold))
                                 .foregroundStyle(.secondary)
                         }
                         Slider(
                             value: Binding(
-                                get: { appState.confidenceGapThreshold },
-                                set: { appState.updateConfidenceGapThreshold($0) }
+                                get: { settings.confidenceGapThreshold },
+                                set: { settings.updateConfidenceGapThreshold($0) }
                             ),
                             in: 0.01...0.30,
                             step: 0.01
@@ -337,11 +341,11 @@ private struct SettingsView: View {
                 Section("Provider Preferences") {
                     ForEach(sortedCapabilities, id: \.self) { capability in
                         Picker(capability, selection: Binding(
-                            get: { appState.selectedProvider(for: capability) },
-                            set: { appState.setPreferredProvider($0, for: capability) }
+                            get: { settings.selectedProvider(for: capability) },
+                            set: { settings.setPreferredProvider($0, for: capability) }
                         )) {
                             Text("System Default").tag("")
-                            ForEach(appState.providerOptions[capability] ?? []) { option in
+                            ForEach(settings.providerOptions[capability] ?? []) { option in
                                 Text(option.name).tag(option.id)
                             }
                         }
@@ -357,7 +361,7 @@ private struct SettingsView: View {
                 }
 
                 Section("Repositories") {
-                    ForEach(repositories) { repository in
+                    ForEach(repositoryRecords) { repository in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(repository.name)
                             Text(repository.location)
@@ -376,7 +380,7 @@ private struct SettingsView: View {
                     }
                     .onDelete { offsets in
                         for index in offsets {
-                            modelContext.delete(repositories[index])
+                            modelContext.delete(repositoryRecords[index])
                         }
                         try? modelContext.save()
                     }
@@ -384,7 +388,7 @@ private struct SettingsView: View {
                         isAddingRepository = true
                     }
                     Button("Refresh All") {
-                        Task { await appState.refreshRepositories() }
+                        Task { await repositories.refreshRepositories() }
                     }
                 }
             }
@@ -410,7 +414,7 @@ private struct SettingsView: View {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Save") {
                                 Task {
-                                    await appState.addRepository(
+                                    await repositories.addRepository(
                                         name: repositoryName,
                                         kind: repositoryKind,
                                         location: repositoryLocation
@@ -431,6 +435,7 @@ private struct SettingsView: View {
 
 private struct DebugView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(SkillCompilationManager.self) private var compiler
 
     var body: some View {
         NavigationStack {
@@ -451,12 +456,12 @@ private struct DebugView: View {
 
     private var compiledIndexSection: some View {
         Section("Compiled Index") {
-            switch appState.compileStatus {
+            switch compiler.compileStatus {
             case .notCompiled:
                 Label("Not compiled", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Button("Compile Now") {
-                    Task { await appState.recompileSkillIndex() }
+                    Task { await compiler.recompileSkillIndex() }
                 }
             case let .compiling(progress):
                 HStack(spacing: 8) {
@@ -472,9 +477,9 @@ private struct DebugView: View {
                     .foregroundStyle(.secondary)
 
                 // Show compiled skills breakdown
-                ForEach(appState.compiledManifests, id: \.skillID) { manifest in
+                ForEach(compiler.compiledManifests, id: \.skillID) { manifest in
                     NavigationLink {
-                        CompiledSkillDetailView(manifest: manifest, index: appState.compiledIndex)
+                        CompiledSkillDetailView(manifest: manifest, index: compiler.compiledIndex)
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -498,7 +503,7 @@ private struct DebugView: View {
                 }
 
                 Button("Recompile") {
-                    Task { await appState.recompileSkillIndex() }
+                    Task { await compiler.recompileSkillIndex() }
                 }
             case let .failed(error):
                 Label("Compile failed", systemImage: "xmark.circle")
@@ -506,7 +511,7 @@ private struct DebugView: View {
                 Text(error)
                     .font(.caption)
                 Button("Retry") {
-                    Task { await appState.recompileSkillIndex() }
+                    Task { await compiler.recompileSkillIndex() }
                 }
             }
         }
@@ -516,7 +521,7 @@ private struct DebugView: View {
 
     @ViewBuilder
     private var userExamplesSection: some View {
-        if let index = appState.compiledIndex {
+        if let index = compiler.compiledIndex {
             let userEntries = index.entries.filter { $0.source == .user }
             if userEntries.isEmpty == false {
                 Section("User Examples in Index") {
@@ -551,15 +556,15 @@ private struct DebugView: View {
 
     @ViewBuilder
     private var orphanedExamplesSection: some View {
-        if appState.orphanedUserExamples.isEmpty == false {
+        if compiler.orphanedUserExamples.isEmpty == false {
             Section("Orphaned User Examples") {
                 Label(
-                    "\(appState.orphanedUserExamples.count) examples reference removed skills",
+                    "\(compiler.orphanedUserExamples.count) examples reference removed skills",
                     systemImage: "exclamationmark.triangle"
                 )
                 .foregroundStyle(.orange)
 
-                ForEach(appState.orphanedUserExamples, id: \.text) { orphan in
+                ForEach(compiler.orphanedUserExamples, id: \.text) { orphan in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(orphan.text).font(.caption)
@@ -580,7 +585,7 @@ private struct DebugView: View {
     }
 
     private func deleteOrphan(_ orphan: UserExample) {
-        let context = ModelContext(appState.modelContainer)
+        let context = ModelContext(compiler.modelContainer)
         let sid = orphan.skillID
         let aid = orphan.actionID
         let txt = orphan.text
@@ -591,7 +596,7 @@ private struct DebugView: View {
             for record in records { context.delete(record) }
             try? context.save()
         }
-        appState.orphanedUserExamples.removeAll { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
+        compiler.orphanedUserExamples.removeAll { $0.skillID == sid && $0.actionID == aid && $0.text == txt }
     }
 
     // MARK: - Match Candidates

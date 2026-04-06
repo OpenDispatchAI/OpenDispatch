@@ -1,5 +1,6 @@
 import Foundation
 import ModelRuntime
+import RouterCore
 import SkillCompiler
 import SkillRegistry
 import SwiftData
@@ -14,7 +15,7 @@ import SwiftData
 
     var log: (String) -> Void = { message in print("[OpenDispatch] \(message)") }
 
-    private let modelContainer: ModelContainer
+    let modelContainer: ModelContainer
     private let settings: SettingsStore
     private var recompileTask: Task<Void, Never>?
 

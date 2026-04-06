@@ -10,7 +10,7 @@ struct ExampleEditorView: View {
     let builtInNegativeExamples: [String]
 
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var appState: AppState
+    @Environment(SkillCompilationManager.self) private var compiler
     @Query private var userExamples: [UserExampleRecord]
     @Query private var suppressedExamples: [SuppressedExampleRecord]
     @State private var newText = ""
@@ -139,14 +139,14 @@ struct ExampleEditorView: View {
         )
         modelContext.insert(record)
         try? modelContext.save()
-        appState.scheduleRecompile()
+        compiler.scheduleRecompile()
     }
 
     private func unsuppress(_ text: String) {
         if let record = suppressedExamples.first(where: { $0.text == text }) {
             modelContext.delete(record)
             try? modelContext.save()
-            appState.scheduleRecompile()
+            compiler.scheduleRecompile()
         }
     }
 
@@ -174,7 +174,7 @@ struct ExampleEditorView: View {
         newText = ""
         newIsNegative = false
         duplicateWarning = nil
-        appState.scheduleRecompile()
+        compiler.scheduleRecompile()
     }
 
     private func findDuplicate(text: String) -> UserExampleRecord? {
@@ -189,6 +189,6 @@ struct ExampleEditorView: View {
             modelContext.delete(userExamples[index])
         }
         try? modelContext.save()
-        appState.scheduleRecompile()
+        compiler.scheduleRecompile()
     }
 }

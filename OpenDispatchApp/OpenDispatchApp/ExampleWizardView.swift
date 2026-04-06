@@ -5,7 +5,7 @@ import SkillCompiler
 import SkillRegistry
 
 struct ExampleWizardView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(SkillCompilationManager.self) private var compiler
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechCapture = SpeechCaptureManager()
@@ -33,7 +33,7 @@ struct ExampleWizardView: View {
     }
 
     private var availableActions: [SkillAction] {
-        appState.compiledManifests.flatMap { manifest in
+        compiler.compiledManifests.flatMap { manifest in
             manifest.actions.map { action in
                 SkillAction(skillID: manifest.skillID, skillName: manifest.name,
                             actionID: action.id, actionTitle: action.title)
@@ -130,7 +130,7 @@ struct ExampleWizardView: View {
                 .font(.headline)
                 .italic()
 
-            if let index = appState.compiledIndex {
+            if let index = compiler.compiledIndex {
                 let candidates = matchCandidates(in: index)
                 if candidates.isEmpty {
                     Label("No close match found", systemImage: "questionmark.circle")
@@ -281,7 +281,7 @@ struct ExampleWizardView: View {
         modelContext.insert(record)
         try? modelContext.save()
         duplicateWarning = nil
-        appState.scheduleRecompile()
+        compiler.scheduleRecompile()
         currentStep = .saved
     }
 

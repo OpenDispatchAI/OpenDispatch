@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct SkillDetailView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(RepositoryManager.self) private var repositories
     @Query(sort: \InstalledSkillRecord.skillID) private var installedSkills: [InstalledSkillRecord]
     let entry: SkillRepositoryEntry
     let repositoryLocation: String
@@ -138,14 +138,14 @@ struct SkillDetailView: View {
 
     private func install() async {
         isInstalling = true
-        await appState.installSkillFromStore(entry: entry, repositoryLocation: repositoryLocation)
+        await repositories.installSkillFromStore(entry: entry, repositoryLocation: repositoryLocation)
         isInstalling = false
     }
 
     private func uninstall() async {
         guard let skillID = entry.skillID else { return }
         isInstalling = true
-        await appState.uninstallSkill(skillID: skillID)
+        await repositories.uninstallSkill(skillID: skillID)
         isInstalling = false
     }
 }

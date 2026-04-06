@@ -1,6 +1,5 @@
 import CapabilityRegistry
 import Combine
-import ExternalProviders
 import Executors
 import Foundation
 import ModelRuntime
@@ -11,11 +10,6 @@ import SwiftData
 import SwiftUI
 import SystemProviders
 import UIKit
-
-struct ProviderOption: Identifiable, Hashable {
-    let id: String
-    let name: String
-}
 
 enum BackendSelection: String, CaseIterable, Identifiable {
     case appleFoundation = "apple_foundation"
@@ -72,265 +66,59 @@ final class AppState: ObservableObject {
     @Published var lastPlanJSON = ""
     @Published var executionLogs: [String] = []
     @Published var lastError: String?
-    @Published var validationMessages: [String] = []
     @Published var pendingConfirmation: PendingConfirmation?
     @Published var pendingDestinationChoice: PendingDestinationChoice?
-    @Published var providerOptions: [String: [ProviderOption]] = [:]
     @Published var captureModeRequested = false
-    @Published var backendSelection: BackendSelection
-    @Published var escalationEnabled: Bool
-    @Published var dryRunEnabled: Bool
-    @Published var confidenceGapThreshold: Double
-    @Published var compileStatus: CompileStatus = .notCompiled
-    @Published var compiledManifests: [YAMLSkillManifest] = []
     @Published var lastMatchCandidates: [MatchCandidate] = []
-    @Published var configuredLanguages: [String] = ["en"]
-    @Published var orphanedUserExamples: [UserExample] = []
     @Published var wizardPromptSkill: YAMLSkillManifest?
 
     let modelContainer: ModelContainer
-    private(set) var compiledIndex: CompiledIndex?
+    let compiler: SkillCompilationManager
+    let settings: SettingsStore
+    let repositories: RepositoryManager
 
     private let eventStore: SwiftDataDispatchEventStore
     private let localLogSink: SwiftDataLocalLogSink
     private let urlHandler = UIApplicationURLHandler()
-    private let defaults = UserDefaults.standard
-    private let settingsKey = "OpenDispatch.Settings"
     private let launchPayloadKey = "OpenDispatch.Launch.Payload"
     private let legacyLaunchCommandKey = "OpenDispatch.Launch.Command"
     private let legacyLaunchCaptureKey = "OpenDispatch.Launch.Capture"
     private var hasBootstrapped = false
-    @Published private var providerPreferences: [String: String]
 
     private static let defaultDispatchCommand = "Unlock my car"
 
-    init(modelContainer: ModelContainer) {
+    init(
+        modelContainer: ModelContainer,
+        compiler: SkillCompilationManager,
+        settings: SettingsStore,
+        repositories: RepositoryManager
+    ) {
         self.modelContainer = modelContainer
+        self.compiler = compiler
+        self.settings = settings
+        self.repositories = repositories
         eventStore = SwiftDataDispatchEventStore(modelContainer: modelContainer)
         localLogSink = SwiftDataLocalLogSink(modelContainer: modelContainer)
 
-        let stored = defaults.dictionary(forKey: settingsKey) ?? [:]
-        let defaultBackend: BackendSelection = AppleFoundationBackend.isAvailableOnCurrentDevice
-            ? .appleFoundation
-            : .embeddingRouter
-        backendSelection = BackendSelection(rawValue: stored["backendSelection"] as? String ?? "") ?? defaultBackend
-        escalationEnabled = stored["escalationEnabled"] as? Bool ?? false
-        dryRunEnabled = stored["dryRunEnabled"] as? Bool ?? false
-        confidenceGapThreshold = stored["confidenceGapThreshold"] as? Double ?? 0.15
-        providerPreferences = stored["providerPreferences"] as? [String: String] ?? [:]
+        // Wire logging from services into execution logs
+        compiler.log = { [weak self] in self?.appendLog($0) }
+        repositories.log = { [weak self] in self?.appendLog($0) }
+
         AppState.shared = self
     }
 
     func bootstrap() async {
         guard hasBootstrapped == false else { return }
         hasBootstrapped = true
-        await ensureDefaultRepository()
-        await compileSkillIndex()
-        await refreshProviderOptions()
+        await repositories.ensureDefaultRepository()
+        await compiler.compileSkillIndex()
+        if let runtime = try? await makeRuntime() {
+            settings.refreshProviderOptions(using: runtime.capabilityRegistry)
+        }
         await consumeLaunchRequestIfNeeded()
         if ProcessInfo.processInfo.arguments.contains("--start-listening-on-launch") {
             captureModeRequested = true
         }
-    }
-
-    func compileSkillIndex() async {
-        // Try loading cached index first
-        if let cached = try? CompiledIndexStore.load(from: CompiledIndexStore.defaultURL()) {
-            compiledIndex = cached
-            compiledManifests = loadYAMLManifests()
-            let skillCount = Set(cached.entries.map(\.skillID)).count
-            compileStatus = .compiled(
-                entryCount: cached.entries.count,
-                skillCount: skillCount,
-                timestamp: cached.compiledAt
-            )
-            appendLog("Loaded cached index: \(cached.entries.count) embeddings from \(skillCount) skills")
-
-            if backendSelection != .embeddingRouter {
-                backendSelection = .embeddingRouter
-                persistSettings()
-            }
-            return
-        }
-
-        // No cache — compile fresh
-        await recompileSkillIndex()
-    }
-
-    func recompileSkillIndex() async {
-        compileStatus = .compiling(progress: "Loading YAML skills...")
-        orphanedUserExamples = []
-        appendLog("Starting skill compilation...")
-
-        do {
-            let manifests = loadYAMLManifests()
-
-            guard manifests.isEmpty == false else {
-                compileStatus = .failed("No YAML skills found")
-                appendLog("No YAML skills found to compile")
-                return
-            }
-
-            compiledManifests = manifests
-            let totalExamples = manifests.flatMap(\.actions).flatMap(\.examples).count
-            compileStatus = .compiling(progress: "Embedding \(totalExamples) examples...")
-
-            guard let backend = ParaphraseBackend() else {
-                compileStatus = .failed("Embedding model failed to load")
-                appendLog("ParaphraseBackend failed to initialize — check that the model is in the bundle")
-                return
-            }
-            let embeddingService = EmbeddingService(backend: backend)
-            let compiler = SkillCompiler(languages: configuredLanguages, embeddingService: embeddingService)
-            let userExamples = fetchUserExamples()
-            let suppressedExamples = fetchSuppressedExamples()
-            let result = try await compiler.compile(manifests: manifests, userExamples: userExamples, suppressedExamples: suppressedExamples)
-            let index = result.index
-
-            if result.orphanedExamples.isEmpty == false {
-                let orphanSkills = Set(result.orphanedExamples.map(\.skillID))
-                appendLog("Warning: \(result.orphanedExamples.count) user examples reference removed skills: \(orphanSkills.joined(separator: ", "))")
-                orphanedUserExamples = result.orphanedExamples
-            }
-
-            try CompiledIndexStore.save(index, to: CompiledIndexStore.defaultURL())
-            appendLog("Cached compiled index to disk")
-
-            compiledIndex = index
-            let skillCount = Set(index.entries.map(\.skillID)).count
-            compileStatus = .compiled(
-                entryCount: index.entries.count,
-                skillCount: skillCount,
-                timestamp: index.compiledAt
-            )
-            appendLog("Compiled \(index.entries.count) embeddings from \(skillCount) skills")
-
-            if backendSelection != .embeddingRouter {
-                backendSelection = .embeddingRouter
-                persistSettings()
-                appendLog("Switched to Compiled Embedding backend")
-            }
-        } catch {
-            compileStatus = .failed(error.localizedDescription)
-            appendLog("Compilation failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func fetchUserExamples() -> [UserExample] {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<UserExampleRecord>()
-        guard let records = try? context.fetch(descriptor) else { return [] }
-        return records.map { record in
-            UserExample(
-                skillID: record.skillID,
-                actionID: record.actionID,
-                skillName: record.skillName,
-                actionTitle: record.actionTitle,
-                text: record.text,
-                isNegative: record.isNegative
-            )
-        }
-    }
-
-    private func fetchSuppressedExamples() -> [SuppressedExample] {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<SuppressedExampleRecord>()
-        guard let records = try? context.fetch(descriptor) else { return [] }
-        return records.map { record in
-            SuppressedExample(
-                skillID: record.skillID,
-                actionID: record.actionID,
-                text: record.text
-            )
-        }
-    }
-
-    private var recompileTask: Task<Void, Never>?
-
-    func scheduleRecompile() {
-        recompileTask?.cancel()
-        recompileTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            await recompileSkillIndex()
-        }
-    }
-
-    private func loadYAMLManifests() -> [YAMLSkillManifest] {
-        var manifests: [YAMLSkillManifest] = []
-
-        // Load bundled skills (native execution eligible)
-        if let bundledURL = Bundle.main.url(forResource: "BundledSkills", withExtension: nil) {
-            appendLog("Found BundledSkills folder in bundle")
-            if let skillDirs = try? FileManager.default.contentsOfDirectory(
-                at: bundledURL, includingPropertiesForKeys: nil
-            ) {
-                for dir in skillDirs {
-                    let yamlURL = dir.appendingPathComponent("skill.yaml")
-                    if var manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
-                        manifest = manifest.withSource(.bundle)
-                        if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
-                            manifests.append(manifest)
-                            appendLog("Loaded bundled skill: \(manifest.name) (\(manifest.actions.count) actions)")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Load from SampleSkills folder reference (blue folder in Xcode)
-        if let sampleSkillsURL = Bundle.main.url(forResource: "SampleSkills", withExtension: nil) {
-            appendLog("Found SampleSkills folder in bundle")
-            if let skillDirs = try? FileManager.default.contentsOfDirectory(
-                at: sampleSkillsURL, includingPropertiesForKeys: nil
-            ) {
-                for dir in skillDirs {
-                    let yamlURL = dir.appendingPathComponent("skill.yaml")
-                    if let manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
-                        if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
-                            manifests.append(manifest)
-                            appendLog("Loaded skill: \(manifest.name) (\(manifest.actions.count) actions)")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Load store-installed skills from App Support
-        let storeService = SkillStoreService()
-        if let installedDir = try? storeService.installedSkillsDirectory(),
-           let skillDirs = try? FileManager.default.contentsOfDirectory(
-               at: installedDir, includingPropertiesForKeys: nil
-           ) {
-            for dir in skillDirs {
-                let yamlURL = dir.appendingPathComponent("skill.yaml")
-                if var manifest = try? YAMLSkillParser.parse(contentsOf: yamlURL) {
-                    manifest = manifest.withSource(.installed)
-                    if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
-                        manifests.append(manifest)
-                        appendLog("Loaded installed skill: \(manifest.name) (\(manifest.actions.count) actions)")
-                    }
-                }
-            }
-        }
-
-        // Also pick up any loose .yaml files in bundle root (for future use)
-        if let yamlURLs = Bundle.main.urls(forResourcesWithExtension: "yaml", subdirectory: nil) {
-            for url in yamlURLs {
-                if let manifest = try? YAMLSkillParser.parse(contentsOf: url) {
-                    if manifests.contains(where: { $0.skillID == manifest.skillID }) == false {
-                        manifests.append(manifest)
-                        appendLog("Loaded skill: \(manifest.name) (\(manifest.actions.count) actions)")
-                    }
-                }
-            }
-        }
-
-        if manifests.isEmpty {
-            appendLog("No YAML skills found in app bundle")
-        }
-
-        return manifests
     }
 
     func submitCurrentInput(source: RouterRequestSource = .text) async {
@@ -343,12 +131,12 @@ final class AppState: ObservableObject {
 
         do {
             appendLog("Input: \"\(input)\"")
-            appendLog("Using \(backendSelection.title) planner")
+            appendLog("Using \(settings.backendSelection.title) planner")
             let runtime = try await makeRuntime()
             let request = RouterRequest(rawInput: input, source: source)
             let resolution = try await runtime.router.route(
                 request: request,
-                availableSkills: runtime.plannerContexts,
+                availableSkills: [],
                 policy: runtime.policy
             )
             lastPlanJSON = try resolution.plan.prettyPrintedJSON()
@@ -370,10 +158,8 @@ final class AppState: ObservableObject {
                 appendLog(executionLogMessage(for: resolution.result))
             }
 
-            // Keep the input visible so the user can see what was dispatched
             lastError = nil
-            validationMessages = runtime.validationMessages
-            await refreshProviderOptions(using: runtime.capabilityRegistry)
+            settings.refreshProviderOptions(using: runtime.capabilityRegistry)
         } catch {
             if let routerError = error as? RouterError,
                case let .ambiguousProviders(options, plan) = routerError {
@@ -452,208 +238,7 @@ final class AppState: ObservableObject {
         pendingDestinationChoice = nil
     }
 
-    func addRepository(name: String, kind: RepositorySourceKind, location: String) async {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedName.isEmpty == false, trimmedLocation.isEmpty == false else { return }
-
-        let context = ModelContext(modelContainer)
-        context.insert(
-            RepositorySourceRecord(
-                name: trimmedName,
-                kind: kind.rawValue,
-                location: trimmedLocation
-            )
-        )
-        try? context.save()
-    }
-
-    func refreshRepositories() async {
-        do {
-            let skillService = try makeSkillService()
-            let context = ModelContext(modelContainer)
-            let repositories = try context.fetch(FetchDescriptor<RepositorySourceRecord>())
-
-            for repository in repositories {
-                guard let source = repository.repositorySource else { continue }
-                do {
-                    let index = try await skillService.repositoryIndex(for: source)
-                    repository.lastRefreshedAt = Date()
-                    repository.lastError = nil
-                    repository.discoveredSkillsCount = index.skills.count
-                } catch {
-                    repository.lastRefreshedAt = Date()
-                    repository.lastError = error.localizedDescription
-                }
-            }
-            try context.save()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func installSkillFromStore(entry: SkillRepositoryEntry, repositoryLocation: String) async {
-        guard let downloadURLString = entry.downloadURL,
-              let downloadURL = URL(string: downloadURLString),
-              let skillID = entry.skillID else {
-            lastError = "Skill has no download URL or ID."
-            return
-        }
-
-        do {
-            let storeService = SkillStoreService()
-            let yaml = try await storeService.downloadSkillYAML(from: downloadURL)
-            let _ = try storeService.installSkill(yaml: yaml, skillID: skillID)
-
-            let context = ModelContext(modelContainer)
-            let descriptor = FetchDescriptor<InstalledSkillRecord>(
-                predicate: #Predicate { $0.skillID == skillID }
-            )
-            if let existing = (try? context.fetch(descriptor))?.first {
-                existing.name = entry.name
-                existing.version = entry.version ?? "1.0.0"
-                existing.yamlFilePath = "\(skillID)/skill.yaml"
-                existing.installedAt = Date()
-            } else {
-                context.insert(InstalledSkillRecord(
-                    skillID: skillID,
-                    name: entry.name,
-                    version: entry.version ?? "1.0.0",
-                    repositoryLocation: repositoryLocation,
-                    yamlFilePath: "\(skillID)/skill.yaml"
-                ))
-            }
-            try context.save()
-
-            await recompileSkillIndex()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func uninstallSkill(skillID: String) async {
-        do {
-            let storeService = SkillStoreService()
-            try storeService.uninstallSkill(skillID: skillID)
-
-            let context = ModelContext(modelContainer)
-            let descriptor = FetchDescriptor<InstalledSkillRecord>(
-                predicate: #Predicate { $0.skillID == skillID }
-            )
-            if let record = (try? context.fetch(descriptor))?.first {
-                context.delete(record)
-                try context.save()
-            }
-
-            await recompileSkillIndex()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func sharedCapabilities(for manifest: YAMLSkillManifest) -> [String] {
-        let newCapabilities = Set(manifest.actions.map(\.id))
-        let existingCapabilities = Set(compiledManifests.flatMap(\.actions).map(\.id))
-        return Array(newCapabilities.intersection(existingCapabilities))
-    }
-
-    func selectedProvider(for capability: String) -> String {
-        providerPreferences[capability] ?? ""
-    }
-
-    func setPreferredProvider(_ providerID: String, for capability: String) {
-        if providerID.isEmpty {
-            providerPreferences.removeValue(forKey: capability)
-        } else {
-            providerPreferences[capability] = providerID
-        }
-        persistSettings()
-    }
-
-    func updateBackendSelection(_ selection: BackendSelection) {
-        backendSelection = selection
-        persistSettings()
-    }
-
-    func updateEscalation(_ enabled: Bool) {
-        escalationEnabled = enabled
-        persistSettings()
-    }
-
-    func updateDryRun(_ enabled: Bool) {
-        dryRunEnabled = enabled
-        persistSettings()
-    }
-
-    func updateConfidenceGapThreshold(_ value: Double) {
-        confidenceGapThreshold = value
-        persistSettings()
-    }
-
-    static let defaultSkillRepoURL: String = {
-        ProcessInfo.processInfo.environment["OD_SKILL_REPO_URL"]
-            ?? "https://opendispatch.ai/api/v1/index.json"
-    }()
-
-    private func ensureDefaultRepository() async {
-        let context = ModelContext(modelContainer)
-        let existing = (try? context.fetch(FetchDescriptor<RepositorySourceRecord>())) ?? []
-        guard existing.isEmpty else { return }
-
-        context.insert(
-            RepositorySourceRecord(
-                name: "OpenDispatch Official",
-                kind: RepositorySourceKind.httpIndex.rawValue,
-                location: Self.defaultSkillRepoURL
-            )
-        )
-        try? context.save()
-    }
-
-    private func consumeLaunchRequestIfNeeded() async {
-        if let payloadData = defaults.data(forKey: launchPayloadKey),
-           let payload = try? JSONDecoder().decode(AppLaunchPayload.self, from: payloadData) {
-            if payload.request.rawInput.isEmpty == false {
-                commandInput = payload.request.rawInput
-            }
-            if let initialPlanJSON = payload.initialPlanJSON, initialPlanJSON.isEmpty == false {
-                lastPlanJSON = initialPlanJSON
-            }
-            captureModeRequested = payload.startListening
-            defaults.removeObject(forKey: launchPayloadKey)
-            return
-        }
-
-        if let command = defaults.string(forKey: legacyLaunchCommandKey), command.isEmpty == false {
-            commandInput = command
-            defaults.removeObject(forKey: legacyLaunchCommandKey)
-        }
-        if defaults.bool(forKey: legacyLaunchCaptureKey) {
-            captureModeRequested = true
-            defaults.removeObject(forKey: legacyLaunchCaptureKey)
-        }
-    }
-
-    private func refreshProviderOptions(using registry: CapabilityRegistry? = nil) async {
-        do {
-            let resolvedRegistry: CapabilityRegistry
-            if let registry {
-                resolvedRegistry = registry
-            } else {
-                let runtime = try await makeRuntime()
-                resolvedRegistry = runtime.capabilityRegistry
-            }
-            var grouped: [String: [ProviderOption]] = [:]
-            for definition in resolvedRegistry.definitions {
-                grouped[definition.id.rawValue] = resolvedRegistry.providers(for: definition.id).map {
-                    ProviderOption(id: $0.id, name: $0.displayName)
-                }
-            }
-            providerOptions = grouped
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
+    // MARK: - Logging
 
     private func appendLog(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
@@ -717,25 +302,36 @@ final class AppState: ObservableObject {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func persistSettings() {
-        defaults.set(
-            [
-                "backendSelection": backendSelection.rawValue,
-                "escalationEnabled": escalationEnabled,
-                "dryRunEnabled": dryRunEnabled,
-                "confidenceGapThreshold": confidenceGapThreshold,
-                "providerPreferences": providerPreferences,
-            ],
-            forKey: settingsKey
-        )
+    // MARK: - Launch
+
+    private func consumeLaunchRequestIfNeeded() async {
+        let defaults = UserDefaults.standard
+        if let payloadData = defaults.data(forKey: launchPayloadKey),
+           let payload = try? JSONDecoder().decode(AppLaunchPayload.self, from: payloadData) {
+            if payload.request.rawInput.isEmpty == false {
+                commandInput = payload.request.rawInput
+            }
+            if let initialPlanJSON = payload.initialPlanJSON, initialPlanJSON.isEmpty == false {
+                lastPlanJSON = initialPlanJSON
+            }
+            captureModeRequested = payload.startListening
+            defaults.removeObject(forKey: launchPayloadKey)
+            return
+        }
+
+        if let command = defaults.string(forKey: legacyLaunchCommandKey), command.isEmpty == false {
+            commandInput = command
+            defaults.removeObject(forKey: legacyLaunchCommandKey)
+        }
+        if defaults.bool(forKey: legacyLaunchCaptureKey) {
+            captureModeRequested = true
+            defaults.removeObject(forKey: legacyLaunchCaptureKey)
+        }
     }
 
+    // MARK: - Runtime
+
     private func makeRuntime() async throws -> RuntimeSnapshot {
-        let installedSkills = try loadInstalledSkills()
-        let baseRegistry = try CapabilityRegistry()
-        let bootstrapSkillService = SkillRegistryService(capabilityRegistry: baseRegistry)
-        let dynamicDefinitions = bootstrapSkillService.capabilityDefinitions(from: installedSkills.map(\.manifest))
-        // Build native executor registry for bundled skills
         let nativeExecutors = NativeExecutorRegistry(executors: [
             "apple_reminders": RemindersNativeExecutor(store: EventKitReminderStore()),
             "apple_calendar": CalendarNativeExecutor(store: EventKitCalendarStore()),
@@ -743,8 +339,7 @@ final class AppState: ObservableObject {
             "apple_shortcuts": ShortcutsRunNativeExecutor(urlHandler: urlHandler),
         ])
 
-        // Create providers from compiled YAML manifests — two-check gate
-        let yamlProviders: [YAMLSkillProvider] = compiledManifests.map { manifest in
+        let yamlProviders: [YAMLSkillProvider] = compiler.compiledManifests.map { manifest in
             let executor: any SkillExecutor
             if manifest.source == .bundle,
                let native = nativeExecutors.executor(for: manifest.skillID) {
@@ -764,52 +359,39 @@ final class AppState: ObservableObject {
             return YAMLSkillProvider(manifest: manifest, executor: executor)
         }
 
-        // Register capabilities from YAML providers (with per-action destructive flags)
         let yamlDefinitions = yamlProviders.flatMap(\.capabilityDefinitions)
-
-        let allDefinitions = baseRegistry.definitions + dynamicDefinitions + yamlDefinitions
+        let baseRegistry = try CapabilityRegistry()
+        let allDefinitions = baseRegistry.definitions + yamlDefinitions
         var seen = Set<String>()
         let uniqueDefinitions = allDefinitions.filter { seen.insert($0.id.rawValue).inserted }
 
         var registry = try CapabilityRegistry(definitions: uniqueDefinitions)
-        let skillService = SkillRegistryService(capabilityRegistry: registry)
-        let validSkills = installedSkills.filter { skillService.validate(manifest: $0.manifest).isEmpty }
-        let validationMessages = installedSkills.flatMap { skill in
-            skillService.validate(manifest: skill.manifest).map(\.description)
-        }
 
         let systemProviders: [any DispatchProvider] = [
             LocalLogProvider(sink: localLogSink),
         ]
-        let externalProviders = ExternalProviderFactory.providers(
-            from: validSkills,
-            urlHandler: urlHandler,
-            logSink: localLogSink
-        )
 
         try SystemProviderFactory.register(providers: systemProviders, into: &registry)
-        try ExternalProviderFactory.register(providers: externalProviders, into: &registry)
         for provider in yamlProviders {
             do {
                 try registry.registerProvider(provider.descriptor)
             } catch CapabilityRegistryError.duplicateProvider {
-                // YAML provider overlaps with an existing provider — skip
                 appendLog("Skipped duplicate provider: \(provider.descriptor.id)")
             }
         }
 
         let backend: any RouterPlanningBackend
-        switch backendSelection {
+        switch settings.backendSelection {
         case .appleFoundation:
             backend = AppleFoundationBackend()
         case .embeddingRouter:
-            if let index = compiledIndex, let paraphrase = ParaphraseBackend() {
+            if let index = compiler.compiledIndex, let paraphrase = ParaphraseBackend() {
                 backend = EmbeddingRouterBackend(
                     compiledIndex: index,
                     embeddingService: EmbeddingService(backend: paraphrase)
                 )
             } else {
-                compileStatus = .failed("No compiled index available. Please compile skills first.")
+                compiler.compileStatus = .failed("No compiled index available. Please compile skills first.")
                 appendLog("No compiled index or embedding model available — compile skills to continue")
                 throw NSError(
                     domain: "OpenDispatch",
@@ -822,25 +404,22 @@ final class AppState: ObservableObject {
         let router = Router(
             capabilityRegistry: registry,
             primaryBackend: backend,
-            escalationBackend: escalationEnabled ? RemoteEscalationBackend() : nil,
-            providers: systemProviders + externalProviders + yamlProviders,
+            escalationBackend: settings.escalationEnabled ? RemoteEscalationBackend() : nil,
+            providers: systemProviders + yamlProviders,
             eventStore: eventStore
         )
 
         return RuntimeSnapshot(
             router: router,
             capabilityRegistry: registry,
-            skillService: skillService,
-            plannerContexts: skillService.planningContexts(from: validSkills),
-            validationMessages: validationMessages,
             basePolicy: RoutingPolicy(
                 localConfidenceThreshold: 0.55,
-                allowRemoteEscalation: escalationEnabled,
-                dryRun: dryRunEnabled,
+                allowRemoteEscalation: settings.escalationEnabled,
+                dryRun: settings.dryRunEnabled,
                 confirmationGranted: false,
                 requireConfirmationForExternal: true,
                 preferredProviders: Dictionary(
-                    uniqueKeysWithValues: providerPreferences.map { key, value in
+                    uniqueKeysWithValues: settings.providerPreferences.map { key, value in
                         (key, [value])
                     }
                 )
@@ -848,22 +427,9 @@ final class AppState: ObservableObject {
         )
     }
 
-    private func loadInstalledSkills() throws -> [InstalledSkill] {
-        // Legacy JSON-based skills are no longer stored in InstalledSkillRecord.
-        // All skill loading now goes through the YAML pipeline (compiledManifests).
-        return []
-    }
-
-    func makeSkillService() throws -> SkillRegistryService {
-        SkillRegistryService(capabilityRegistry: try CapabilityRegistry())
-    }
-
     private struct RuntimeSnapshot {
         let router: Router
         let capabilityRegistry: CapabilityRegistry
-        let skillService: SkillRegistryService
-        let plannerContexts: [PlannerSkillContext]
-        let validationMessages: [String]
         let basePolicy: RoutingPolicy
 
         var policy: RoutingPolicy {
